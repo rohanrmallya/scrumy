@@ -130,17 +130,18 @@
   <div class="slide-area">
     {#if slides[currentSlide]}
       {@const s = slides[currentSlide]}
-      <div class="slide" style="position:relative;">
-        {#if s.type === 'title'}
-          <!-- Title Slide -->
-          <div style="height:100%; position:relative; overflow:hidden;">
-            <div class="dynamic-bg">
-              <div class="blob blob-1"></div>
-              <div class="blob blob-2"></div>
-              <div class="blob blob-3"></div>
-              <div class="blob blob-4"></div>
-            </div>
-            
+      <div class="slide" style="position:relative; height:100%; background:#0A0C10; overflow:hidden;">
+        <!-- Global Dynamic Background -->
+        <div class="dynamic-bg" style="opacity: {s.type === 'title' || s.type === 'closing' ? 1 : 0.4}; transition: opacity 1s ease;">
+          <div class="blob blob-1"></div>
+          <div class="blob blob-2"></div>
+          <div class="blob blob-3"></div>
+          <div class="blob blob-4"></div>
+        </div>
+
+        <div style="position:relative; z-index:2; height:100%; width:100%; overflow:hidden;">
+          {#if s.type === 'title'}
+            <!-- Title Slide -->
             <div class="slide-content">
               <div class="glass-tag fade-in-up" style="animation-delay: 0.1s;">
                 {s.data.isRetro ? 'Sprint Retrospective' : 'Sprint Introduction'}
@@ -154,357 +155,306 @@
                 </p>
               {/if}
             </div>
-          </div>
 
-        {:else if s.type === 'metrics'}
-          {@const d = s.data as PreviousData}
-          {@const sc = d.spillovers === 0 ? { bg:'#F0FDF4', border:'#DCFCE7', text:'#16A34A' } : d.spillovers <= 8 ? { bg:'#FFFBEB', border:'#FEF3C7', text:'#D97706' } : { bg:'#FFFBFB', border:'#FEE2E2', text:'#EF4444' }}
-          <!-- Metrics Slide -->
-          <div style="background:#fff;height:100%;padding:40px 60px;display:flex;flex-direction:column;font-family:'Inter', sans-serif;">
-            <div style="margin-bottom:40px;">
-              <h1 style="font-size:42px;font-weight:700;color:#1A1B2E;margin-bottom:8px;letter-spacing:-0.02em;">Sprint Review: Metrics</h1>
-              <p style="font-size:18px;color:#6B7280;">Data from previous sprint</p>
-            </div>
-
-            <div style="display:grid;grid-template-columns:1.2fr 1fr 1fr;grid-template-rows:repeat(3, minmax(0, 1fr));gap:24px;flex:1;margin-bottom:40px;">
-              
-              <!-- Total Story Points Delivered (Span 2 rows) -->
-              <div style="grid-row: span 2; background:#F8FAFF; border:1px solid #E0E7FF; border-radius:12px; padding:32px; display:flex; flex-direction:column; position:relative;">
-                <span style="font-size:12px; font-weight:700; color:#4C6EF5; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:auto;">Total Story Points Delivered</span>
-                <div style="position:absolute; top:32px; right:32px; width:40px; height:40px; background:#DDE6FF; border-radius:50%; display:flex; align-items:center; justify-content:center;">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4C6EF5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                </div>
-                <div style="margin-bottom:12px;">
-                  <span style="font-size:120px; font-weight:800; color:#1A1B2E; line-height:1;">{d.total_sp_delivered}</span> story points
-                </div>
+          {:else if s.type === 'metrics'}
+            {@const d = s.data as PreviousData}
+            {@const sc = d.spillovers === 0 ? { bg:'rgba(22, 163, 74, 0.1)', border:'rgba(22, 163, 74, 0.2)', text:'#4ADE80' } : d.spillovers <= 8 ? { bg:'rgba(217, 119, 6, 0.1)', border:'rgba(217, 119, 6, 0.2)', text:'#FBBF24' } : { bg:'rgba(239, 68, 68, 0.1)', border:'rgba(239, 68, 68, 0.2)', text:'#F87171' }}
+            <!-- Metrics Slide -->
+            <div style="height:100%; padding:40px 60px; display:flex; flex-direction:column; font-family:'Inter', sans-serif; color:#fff;">
+              <div style="margin-bottom:40px;" class="fade-in-up">
+                <h1 style="font-size:42px; font-weight:800; color:#fff; margin-bottom:8px; letter-spacing:-0.02em;">Sprint Review: Metrics</h1>
+                <p style="font-size:18px; color:rgba(255,255,255,0.5);">Data from previous sprint</p>
               </div>
 
-              <!-- Total Epics Delivered -->
-              <div style="background:#fff; border:1px solid #E5E7EB; border-radius:12px; padding:24px; display:flex; flex-direction:column; justify-content:space-between;">
-                <span style="font-size:12px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.05em;">Total Epics Delivered</span>
-                <div style="display:flex; align-items:baseline; gap:8px;">
-                  <span style="font-size:48px; font-weight:800; color:#1A1B2E;">{d.total_epics_delivered}</span>
-                  <span style="font-size:18px; color:#6B7280;">epics</span>
+              <div style="display:grid; grid-template-columns:1.2fr 1fr 1fr; grid-template-rows:repeat(3, minmax(0, 1fr)); gap:24px; flex:1; margin-bottom:40px;">
+                
+                <!-- Total Story Points Delivered -->
+                <div class="glass-card fade-in-up" style="grid-row: span 2; padding:32px; display:flex; flex-direction:column; position:relative; animation-delay: 0.1s;">
+                  <span style="font-size:12px; font-weight:700; color:#818CF8; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:auto;">Total Story Points Delivered</span>
+                  <div style="position:absolute; top:32px; right:32px; width:48px; height:48px; background:rgba(129, 140, 248, 0.15); border-radius:12px; display:flex; align-items:center; justify-content:center;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#818CF8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  </div>
+                  <div style="margin-bottom:12px;">
+                    <span style="font-size:120px; font-weight:900; color:#fff; line-height:1; letter-spacing:-0.04em;">{d.total_sp_delivered}</span> 
+                    <span style="font-size:24px; color:rgba(255,255,255,0.4); margin-left:8px;">points</span>
+                  </div>
                 </div>
-              </div>
 
-              <!-- Spillovers -->
-              <div style="background:{sc.bg}; border:1px solid {sc.border}; border-radius:12px; padding:24px; display:flex; flex-direction:column; justify-content:space-between; position:relative;">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                  <span style="font-size:12px; font-weight:700; color:{sc.text}; text-transform:uppercase; letter-spacing:0.05em;">Spillovers</span>
-                  {#if d.spillovers === 0}
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{sc.text}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                  {:else}
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{sc.text}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                  {/if}
-                </div>
-                <div style="display:flex; align-items:baseline; gap:8px;">
-                  <span style="font-size:48px; font-weight:800; color:{sc.text};">{d.spillovers}</span>
-                  <span style="font-size:18px; color:{sc.text}; opacity:0.8;">pts</span>
-                </div>
-              </div>
-
-
-              <!-- Total Work Logged (Span 2 columns) -->
-              <div style="grid-column: span 2; background:#F9FAFB; border:1px solid #E5E7EB; border-radius:12px; padding:24px; display:flex; flex-direction:column; justify-content:space-between;">
-                <span style="font-size:12px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.05em;">Total Work Logged</span>
-                <div style="display:flex; align-items:center; justify-content:space-between;">
+                <!-- Total Epics Delivered -->
+                <div class="glass-card fade-in-up" style="padding:24px; display:flex; flex-direction:column; justify-content:space-between; animation-delay: 0.2s;">
+                  <span style="font-size:12px; font-weight:700; color:rgba(255,255,255,0.6); text-transform:uppercase; letter-spacing:0.05em;">Total Epics Delivered</span>
                   <div style="display:flex; align-items:baseline; gap:8px;">
-                    <span style="font-size:48px; font-weight:800; color:#1A1B2E;">{d.total_hours_logged}</span>
-                    <span style="font-size:18px; color:#6B7280;">hours</span>
-                  </div>
-                  <div style="width:240px; height:12px; background:#E5E7EB; border-radius:6px; overflow:hidden;">
-                    <div style="width:75%; height:100%; background:#4B5563; border-radius:6px;"></div>
+                    <span style="font-size:56px; font-weight:800; color:#fff;">{d.total_epics_delivered}</span>
+                    <span style="font-size:18px; color:rgba(255,255,255,0.4);">epics</span>
                   </div>
                 </div>
-              </div>
 
-              <!-- Hrs / Story Point -->
-              <div style="background:#fff; border:1px solid #E5E7EB; border-radius:12px; padding:24px; display:flex; flex-direction:column; justify-content:space-between;">
-                <span style="font-size:12px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.05em;">Hrs / Story Point</span>
-                <div style="display:flex; align-items:baseline; gap:8px;">
-                  <span style="font-size:48px; font-weight:800; color:#1A1B2E;">{d.avg_hours_per_sp.toFixed(1)}</span>
-                  <span style="font-size:18px; color:#6B7280;">avg</span>
-                </div>
-              </div>
-
-              <!-- Capacity Comparison (Span 2 columns) -->
-              <div style="grid-column: span 2; background:#F9FAFB; border:1px solid #E5E7EB; border-radius:12px; padding:32px; display:flex; flex-direction:column; gap:20px;">
-                <div style="display:flex; flex-direction:column; gap:8px;">
-                  <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; color:#4B5563; text-transform:uppercase; letter-spacing:0.05em;">
-                    <span>Planned Capacity</span>
-                    <span>{d.planned_sp} pts</span>
-                  </div>
-                  <div style="width:100%; height:10px; background:#E5E7EB; border-radius:5px; overflow:hidden;">
-                    <div style="width:100%; height:100%; background:#6B7280;"></div>
-                  </div>
-                </div>
-                <div style="display:flex; flex-direction:column; gap:8px;">
-                  <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; color:#4C6EF5; text-transform:uppercase; letter-spacing:0.05em;">
-                    <span>Executed Capacity</span>
-                    <span>{d.executed_sp} pts</span>
-                  </div>
-                  <div style="width:100%; height:10px; background:#E5E7EB; border-radius:5px; overflow:hidden;">
-                    <div style="width:{(d.executed_sp / d.planned_sp) * 100}%; height:100%; background:#4C6EF5;"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Footer -->
-            <div style="border-top:1px solid #E5E7EB; padding-top:20px; display:flex; justify-content:space-between; align-items:center; color:#9CA3AF; font-size:13px; font-weight:600;">
-              <div>{pres?.sprint_name ?? 'Sprint 42'} • Q3</div>
-              <div>Generated: Today, 09:00 AM</div>
-            </div>
-          </div>
-
-
-        {:else if s.type === 'learnings'}
-          <!-- Team Learnings Slide -->
-          <div style="background:#F3F4F6;height:100%;padding:40px 60px;display:flex;flex-direction:column;font-family:'Inter', sans-serif;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:40px;">
-              <div>
-                <h1 style="font-size:42px;font-weight:700;color:#1A1B2E;margin-bottom:8px;letter-spacing:-0.02em;">Team Learnings</h1>
-                <p style="font-size:18px;color:#6B7280;">{pres?.sprint_name ?? 'Sprint 42'} Retrospective Insights</p>
-              </div>
-              <div style="background:#0066FF; color:#fff; padding:6px 16px; border-radius:20px; font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                {pres?.sprint_name ?? 'Sprint 42'}
-              </div>
-            </div>
-
-            <div style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:repeat(auto-fill, minmax(140px, 1fr)); gap:24px; flex:1;">
-              {#each s.data.items as item, i}
-                {@const gradients = [
-                  'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
-                  'linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%)',
-                  'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)',
-                  'linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)',
-                  'linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)',
-                  'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-                  'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)'
-                ]}
-                {@const gradient = gradients[i % gradients.length]}
-                <div style="background:#fff; border:1px solid #E5E7EB; border-radius:12px; padding:24px; display:flex; gap:20px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-                  <div style="width:48px; height:48px; border-radius:12px; flex-shrink:0; background:{gradient};"></div>
-                  <div style="display:flex; flex-direction:column; gap:8px;">
-
-                    <h3 style="font-size:20px; font-weight:700; color:#1A1B2E; line-height:1.2;">{item.title || 'Key Insight'}</h3>
-                    <p style="font-size:14px; color:#4B5563; line-height:1.5; margin-bottom:12px;">{item.content}</p>
-                    <div style="display:flex; flex-wrap:wrap; gap:6px;">
-                      {#each (item.tags ?? []) as tag}
-                        <span style="background:#F3F4F6; color:#6B7280; padding:3px 8px; border-radius:4px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">{tag}</span>
-                      {/each}
-                    </div>
-                  </div>
-                </div>
-              {/each}
-            </div>
-          </div>
-        {:else if s.type === 'changes'}
-          <!-- Process Changes Slide -->
-          <div style="background:#FDFCFB;height:100%;padding:40px 60px;display:flex;flex-direction:column;font-family:'Inter', sans-serif;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:40px;">
-              <div>
-                <h1 style="font-size:42px;font-weight:700;color:#1A1B2E;margin-bottom:8px;letter-spacing:-0.02em;">Process Changes</h1>
-                <p style="font-size:18px;color:#6B7280;">Strategic adjustments for {pres?.sprint_name ?? 'the next sprint'}</p>
-              </div>
-              <div style="background:#10B981; color:#fff; padding:6px 16px; border-radius:20px; font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                IMPROVEMENT
-              </div>
-            </div>
-
-            <div style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:repeat(auto-fill, minmax(140px, 1fr)); gap:24px; flex:1;">
-              {#each s.data.items as item, i}
-                {@const gradients = [
-                  'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-                  'linear-gradient(135deg, #5ee7df 0%, #b490ca 100%)',
-                  'linear-gradient(135deg, #c31432 0%, #240b36 100%)',
-                  'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
-                  'linear-gradient(135deg, #ee9ca7 0%, #ffdde1 100%)',
-                  'linear-gradient(135deg, #6a11cb 0%, #2575fc 100%)'
-                ]}
-                {@const gradient = gradients[i % gradients.length]}
-                <div style="background:#fff; border:1px solid #E5E7EB; border-radius:12px; padding:24px; display:flex; gap:20px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-                  <div style="width:48px; height:48px; border-radius:12px; flex-shrink:0; background:{gradient};"></div>
-                  <div style="display:flex; flex-direction:column; gap:8px;">
-                    <h3 style="font-size:20px; font-weight:700; color:#1A1B2E; line-height:1.2;">{item.title || 'Process Update'}</h3>
-                    <p style="font-size:14px; color:#4B5563; line-height:1.5; margin-bottom:12px;">{item.content}</p>
-                    <div style="display:flex; flex-wrap:wrap; gap:6px;">
-                      {#each (item.tags ?? []) as tag}
-                        <span style="background:#ECFDF5; color:#059669; padding:3px 8px; border-radius:4px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">{tag}</span>
-                      {/each}
-                    </div>
-                  </div>
-                </div>
-              {/each}
-            </div>
-          </div>
-
-
-        {:else if s.type === 'epic'}
-          {@const e = s.data as Epic}
-          <!-- Redesigned Epic Slide -->
-          <div style="background:#fff; height:100%; display:grid; grid-template-columns: 1fr 340px; font-family:'Inter', sans-serif;">
-            
-            <!-- Left Side: Main Content -->
-            <div style="padding: 60px 80px; overflow-y: auto; display: flex; flex-direction: column; gap: 40px; border-right: 1px solid #F3F4F6;">
-              
-              <!-- Header & Tags -->
-              <div>
-                <div style="display: flex; gap: 12px; margin-bottom: 24px;">
-                  {#if e.id}
-                    <span style="background: #FFF7ED; color: #EA580C; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 700; border: 1px solid #FFEDD5; text-transform: uppercase; letter-spacing: 0.05em;">{e.id}</span>
-                  {/if}
-                  <span style="background: #EFF6FF; color: #2563EB; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 700; border: 1px solid #DBEAFE; text-transform: uppercase; letter-spacing: 0.05em;">{pres?.sprint_name?.includes('Q') ? pres.sprint_name.split(' ')[0] : ''} INITIATIVE</span>
-                </div>
-                <h1 style="font-size: 64px; font-weight: 800; color: #111827; line-height: 1.1; letter-spacing: -0.02em;">{e.title}</h1>
-              </div>
-
-              <!-- Summary Section -->
-              <div style="display: flex; flex-direction: column; gap: 16px;">
-                <div style="display: flex; align-items: center; gap: 12px; color: #4F46E5;">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <h2 style="font-size: 24px; font-weight: 700;">Summary</h2>
-                </div>
-                <p style="font-size: 20px; color: #4B5563; line-height: 1.6;">{e.summary || 'No summary provided.'}</p>
-              </div>
-
-              <!-- Why We Need It Section -->
-              <div style="display: flex; flex-direction: column; gap: 20px;">
-                <div style="display: flex; align-items: center; gap: 12px; color: #4F46E5;">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
-                  <h2 style="font-size: 24px; font-weight: 700;">Why we need it?</h2>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 16px;">
-                  {#each (e.why_needed || '').split('\n').filter(Boolean) as line}
-                    <div style="display: flex; gap: 16px; align-items: flex-start;">
-                      <div style="width: 24px; height: 24px; background: #EEF2FF; border: 1.5px solid #6366F1; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                      </div>
-                      <p style="font-size: 18px; color: #374151; line-height: 1.4;">
-                        {#if line.includes(':')}
-                          <strong style="color: #111827;">{line.split(':')[0]}:</strong>{line.split(':').slice(1).join(':')}
-                        {:else}
-                          {line}
-                        {/if}
-                      </p>
-                    </div>
-                  {/each}
-                </div>
-              </div>
-            </div>
-
-            <!-- Right Side: Metadata / Sidebar -->
-            <div style="background: #F9FAFB; padding: 60px 40px; display: flex; flex-direction: column; gap: 48px;">
-              
-              <!-- Audience Section -->
-              <div style="display: flex; flex-direction: column; gap: 24px;">
-                <div style="display: flex; align-items: center; gap: 12px; color: #4F46E5;">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                  <h2 style="font-size: 24px; font-weight: 700;">Audience</h2>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 12px;">
-                  {#each (e.audience || '').split('\n').filter(Boolean) as aud}
-                    <div style="background: #fff; border: 1px solid #E5E7EB; border-radius: 12px; padding: 16px 20px; display: flex; align-items: center; gap: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                      <div style="width: 40px; height: 40px; background: #EFF6FF; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #3B82F6;">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                      </div>
-                      <span style="font-size: 16px; font-weight: 600; color: #1F2937;">{aud}</span>
-                    </div>
-                  {/each}
-                </div>
-              </div>
-
-              <!-- Timeline Section -->
-              <div style="display: flex; flex-direction: column; gap: 24px;">
-                <div style="display: flex; align-items: center; gap: 12px; color: #4F46E5;">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                  <h2 style="font-size: 24px; font-weight: 700;">Timeline</h2>
-                </div>
-                <div style="background: #fff; border: 1px solid #E5E7EB; border-radius: 12px; padding: 24px; display: flex; gap: 16px; position: relative; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                  <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: #3B82F6;"></div>
-                  <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <span style="font-size: 11px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; letter-spacing: 0.05em;">Target Completion</span>
-                    <div style="display: flex; align-items: baseline; gap: 8px;">
-                      <span style="font-size: 20px; font-weight: 800; color: #3B82F6;">{e.when_doing?.split('–')[0] || 'TBD'}</span>
-                      <span style="color: #9CA3AF;">—</span>
-                      <span style="font-size: 20px; font-weight: 700; color: #1F2937;">{e.when_doing?.split('–')[1] || ''}</span>
-                    </div>
-                    {#if e.total_sp}
-                      <div style="margin-top: 12px; display: flex; align-items: center; gap: 6px; color: #6B7280; font-size: 14px;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
-                        <span>{e.total_sp} Story Points</span>
-                      </div>
+                <!-- Spillovers -->
+                <div class="glass-card fade-in-up" style="background:{sc.bg}; border:1px solid {sc.border}; border-radius:24px; backdrop-filter: blur(12px); padding:24px; display:flex; flex-direction:column; justify-content:space-between; position:relative; animation-delay: 0.3s;">
+                  <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <span style="font-size:12px; font-weight:700; color:{sc.text}; text-transform:uppercase; letter-spacing:0.05em;">Spillovers</span>
+                    {#if d.spillovers === 0}
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="{sc.text}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    {:else}
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="{sc.text}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
                     {/if}
                   </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-        {:else if s.type === 'retro-feedback'}
-          <!-- Interactive Retro Feedback Slide -->
-          <div style="background:#F9FAFB;height:100%;padding:40px 60px;display:flex;flex-direction:column;gap:32px;overflow:hidden;font-family:'Inter', sans-serif;">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <div>
-                <h2 style="font-size:42px;font-weight:800;color:#1A1B2E;letter-spacing:-0.02em;">Feedback & Learnings</h2>
-                <p style="font-size:18px;color:#6B7280;margin-top:4px;">Insights gathered from the team during retrospective</p>
-              </div>
-              <span style="background:#EEF2FF; color:#4F46E5; padding:8px 16px; border-radius:20px; font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px; border:1px solid #E0E7FF;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                INTERACTIVE
-              </span>
-            </div>
-
-            <div style="flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill, minmax(340px, 1fr));grid-auto-rows:max-content;gap:24px;padding:4px;">
-              {#each s.data.items as item, i}
-                <div style="background:#fff; border:1px solid #E5E7EB; border-radius:16px; padding:28px; display:flex; flex-direction:column; gap:20px; position:relative; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); animation:fadeIn 400ms ease forwards;">
-                  <div style="width:40px; height:40px; background:linear-gradient(135deg, #6366F1 0%, #4F46E5 100%); border-radius:10px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:16px; box-shadow:0 4px 12px rgba(79, 70, 229, 0.25);">
-                    {i+1}
+                  <div style="display:flex; align-items:baseline; gap:8px;">
+                    <span style="font-size:56px; font-weight:800; color:{sc.text};">{d.spillovers}</span>
+                    <span style="font-size:18px; color:{sc.text}; opacity:0.8;">pts</span>
                   </div>
-                  <p style="font-size:20px; color:#374151; line-height:1.6; font-weight:500;">{item}</p>
                 </div>
-              {/each}
-              {#if s.data.items.length === 0}
-                <div style="grid-column: 1 / -1; height: 200px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.5); border: 2px dashed #E5E7EB; border-radius: 16px; color: #9CA3AF; font-size: 18px;">
-                  Waiting for team feedback...
+
+                <!-- Total Work Logged -->
+                <div class="glass-card fade-in-up" style="grid-column: span 2; padding:24px; display:flex; flex-direction:column; justify-content:space-between; animation-delay: 0.4s;">
+                  <span style="font-size:12px; font-weight:700; color:rgba(255,255,255,0.6); text-transform:uppercase; letter-spacing:0.05em;">Total Work Logged</span>
+                  <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; align-items:baseline; gap:8px;">
+                      <span style="font-size:56px; font-weight:800; color:#fff;">{d.total_hours_logged}</span>
+                      <span style="font-size:18px; color:rgba(255,255,255,0.4);">hours</span>
+                    </div>
+                    <div style="width:240px; height:12px; background:rgba(255,255,255,0.05); border-radius:6px; overflow:hidden; border:1px solid rgba(255,255,255,0.1);">
+                      <div style="width:75%; height:100%; background:linear-gradient(90deg, #818CF8, #C084FC); border-radius:6px;"></div>
+                    </div>
+                  </div>
                 </div>
-              {/if}
+
+                <!-- Hrs / Story Point -->
+                <div class="glass-card fade-in-up" style="padding:24px; display:flex; flex-direction:column; justify-content:space-between; animation-delay: 0.5s;">
+                  <span style="font-size:12px; font-weight:700; color:rgba(255,255,255,0.6); text-transform:uppercase; letter-spacing:0.05em;">Hrs / Story Point</span>
+                  <div style="display:flex; align-items:baseline; gap:8px;">
+                    <span style="font-size:56px; font-weight:800; color:#fff;">{d.avg_hours_per_sp.toFixed(1)}</span>
+                    <span style="font-size:18px; color:rgba(255,255,255,0.4);">avg</span>
+                  </div>
+                </div>
+
+                <!-- Capacity Comparison -->
+                <div class="glass-card fade-in-up" style="grid-column: span 2; padding:32px; display:flex; flex-direction:column; gap:20px; animation-delay: 0.6s;">
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; color:rgba(255,255,255,0.5); text-transform:uppercase; letter-spacing:0.05em;">
+                      <span>Planned Capacity</span>
+                      <span style="color:#fff;">{d.planned_sp} pts</span>
+                    </div>
+                    <div style="width:100%; height:10px; background:rgba(255,255,255,0.05); border-radius:5px; overflow:hidden;">
+                      <div style="width:100%; height:100%; background:rgba(255,255,255,0.2);"></div>
+                    </div>
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; color:#818CF8; text-transform:uppercase; letter-spacing:0.05em;">
+                      <span>Executed Capacity</span>
+                      <span style="color:#fff;">{d.executed_sp} pts</span>
+                    </div>
+                    <div style="width:100%; height:10px; background:rgba(255,255,255,0.05); border-radius:5px; overflow:hidden;">
+                      <div style="width:{(d.executed_sp / d.planned_sp) * 100}%; height:100%; background:linear-gradient(90deg, #4F46E5, #818CF8);"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Footer -->
+              <div style="border-top:1px solid rgba(255,255,255,0.1); padding-top:20px; display:flex; justify-content:space-between; align-items:center; color:rgba(255,255,255,0.3); font-size:13px; font-weight:600;">
+                <div>{pres?.sprint_name ?? 'Sprint 42'} • Q3</div>
+                <div>Generated: Today, 09:00 AM</div>
+              </div>
             </div>
 
-            <!-- Live add feedback -->
-            <div style="display:flex;gap:16px;background:#fff;border:1px solid #E5E7EB;border-radius:16px;padding:16px 20px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1);margin-bottom:60px;">
-              <input
-                class="input"
-                bind:value={newFeedback}
-                placeholder="Share your thoughts live…"
-                onkeydown={e => e.key === 'Enter' && addFeedbackItem()}
-                style="flex:1;font-size:18px;border:none;background:transparent;outline:none;"
-              />
-              <button 
-                class="btn btn-primary" 
-                onclick={addFeedbackItem} 
-                disabled={addingFeedback || !newFeedback.trim()}
-                style="padding:10px 24px;border-radius:10px;font-weight:700;font-size:16px;"
-              >
-                {addingFeedback ? 'Adding...' : 'Post Feedback'}
-              </button>
-            </div>
-          </div>
+          {:else if s.type === 'learnings' || s.type === 'changes'}
+            <!-- Learnings/Changes Slide -->
+            <div style="height:100%; padding:40px 60px; display:flex; flex-direction:column; font-family:'Inter', sans-serif;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:40px;" class="fade-in-up">
+                <div>
+                  <h1 style="font-size:42px; font-weight:800; color:#fff; margin-bottom:8px; letter-spacing:-0.02em;">
+                    {s.type === 'learnings' ? 'Team Learnings' : 'Process Changes'}
+                  </h1>
+                  <p style="font-size:18px; color:rgba(255,255,255,0.5);">
+                    {s.type === 'learnings' ? `${pres?.sprint_name ?? 'Sprint'} Retrospective Insights` : `Strategic adjustments for ${pres?.sprint_name ?? 'next sprint'}`}
+                  </p>
+                </div>
+                <div style="background:{s.type === 'learnings' ? 'rgba(79, 70, 229, 0.2)' : 'rgba(16, 185, 129, 0.2)'}; color:{s.type === 'learnings' ? '#818CF8' : '#34D399'}; padding:8px 20px; border-radius:100px; font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px; border:1px solid {s.type === 'learnings' ? 'rgba(79, 70, 229, 0.3)' : 'rgba(16, 185, 129, 0.3)'};">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                  {s.type === 'learnings' ? pres?.sprint_name : 'IMPROVEMENT'}
+                </div>
+              </div>
 
-        {:else if s.type === 'closing'}
-          <!-- Closing Slide -->
-          <div style="height:100%; position:relative; overflow:hidden;">
-            <div class="dynamic-bg">
-              <div class="blob blob-1"></div>
-              <div class="blob blob-2" style="animation-delay: -12s;"></div>
-              <div class="blob blob-3" style="animation-delay: -20s;"></div>
-              <div class="blob blob-4" style="animation-delay: -25s;"></div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:repeat(auto-fill, minmax(140px, 1fr)); gap:24px; flex:1; overflow-y:auto; padding:4px;">
+                {#each s.data.items as item, i}
+                  {@const gradients = [
+                    'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
+                    'linear-gradient(135deg, #EC4899 0%, #DB2777 100%)',
+                    'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                    'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',
+                    'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)',
+                    'linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)'
+                  ]}
+                  {@const gradient = gradients[i % gradients.length]}
+                  <div class="glass-card fade-in-up" style="padding:28px; display:flex; gap:24px; animation-delay: {i * 0.05}s;">
+                    <div style="width:56px; height:56px; border-radius:16px; flex-shrink:0; background:{gradient}; display:flex; align-items:center; justify-content:center; box-shadow: 0 8px 16px rgba(0,0,0,0.2);">
+                      <span style="color:#fff; font-weight:900; font-size:20px;">{i+1}</span>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:12px;">
+                      <h3 style="font-size:22px; font-weight:700; color:#fff; line-height:1.2;">{item.title || (s.type === 'learnings' ? 'Key Insight' : 'Process Update')}</h3>
+                      <p style="font-size:16px; color:rgba(255,255,255,0.6); line-height:1.6;">{item.content}</p>
+                      <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">
+                        {#each (item.tags ?? []) as tag}
+                          <span style="background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.5); padding:4px 10px; border-radius:6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; border:1px solid rgba(255,255,255,0.1);">{tag}</span>
+                        {/each}
+                      </div>
+                    </div>
+                  </div>
+                {/each}
+              </div>
             </div>
-            
+
+          {:else if s.type === 'epic'}
+            {@const e = s.data as Epic}
+            <!-- Redesigned Epic Slide (Dark) -->
+            <div style="height:100%; display:grid; grid-template-columns: 1fr 380px; font-family:'Inter', sans-serif;">
+              
+              <!-- Left Side: Main Content -->
+              <div style="padding: 60px 80px; overflow-y: auto; display: flex; flex-direction: column; gap: 48px; border-right: 1px solid rgba(255,255,255,0.1);">
+                
+                <div class="fade-in-up">
+                  <div style="display: flex; gap: 12px; margin-bottom: 24px;">
+                    {#if e.id}
+                      <span style="background: rgba(234, 88, 12, 0.15); color: #FB923C; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; border: 1px solid rgba(234, 88, 12, 0.3); text-transform: uppercase; letter-spacing: 0.05em;">{e.id}</span>
+                    {/if}
+                    <span style="background: rgba(79, 70, 229, 0.15); color: #818CF8; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; border: 1px solid rgba(79, 70, 229, 0.3); text-transform: uppercase; letter-spacing: 0.05em;">{pres?.sprint_name?.includes('Q') ? pres.sprint_name.split(' ')[0] : ''} INITIATIVE</span>
+                  </div>
+                  <h1 style="font-size: 68px; font-weight: 900; color: #fff; line-height: 1.1; letter-spacing: -0.03em;">{e.title}</h1>
+                </div>
+
+                <div class="fade-in-up" style="animation-delay: 0.1s;">
+                  <div style="display: flex; align-items: center; gap: 12px; color: #818CF8; margin-bottom: 20px;">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line></svg>
+                    <h2 style="font-size: 26px; font-weight: 800;">Summary</h2>
+                  </div>
+                  <p style="font-size: 22px; color: rgba(255,255,255,0.7); line-height: 1.6; font-weight: 400;">{e.summary || 'No summary provided.'}</p>
+                </div>
+
+                <div class="fade-in-up" style="animation-delay: 0.2s;">
+                  <div style="display: flex; align-items: center; gap: 12px; color: #818CF8; margin-bottom: 24px;">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+                    <h2 style="font-size: 26px; font-weight: 800;">Why we need it?</h2>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 20px;">
+                    {#each (e.why_needed || '').split('\n').filter(Boolean) as line}
+                      <div class="glass-card" style="padding: 20px 24px; display: flex; gap: 20px; align-items: flex-start;">
+                        <div style="width: 28px; height: 28px; background: rgba(79, 70, 229, 0.2); border: 2px solid #6366F1; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px;">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        </div>
+                        <p style="font-size: 19px; color: #fff; line-height: 1.5;">
+                          {#if line.includes(':')}
+                            <strong style="color: #818CF8; font-weight: 800;">{line.split(':')[0]}:</strong>{line.split(':').slice(1).join(':')}
+                          {:else}
+                            {line}
+                          {/if}
+                        </p>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Right Side: Sidebar -->
+              <div style="padding: 60px 40px; display: flex; flex-direction: column; gap: 56px;">
+                
+                <div class="fade-in-up" style="animation-delay: 0.3s;">
+                  <div style="display: flex; align-items: center; gap: 12px; color: #818CF8; margin-bottom: 24px;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+                    <h2 style="font-size: 24px; font-weight: 800;">Audience</h2>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 16px;">
+                    {#each (e.audience || '').split('\n').filter(Boolean) as aud}
+                      <div class="glass-card" style="padding: 18px 24px; display: flex; align-items: center; gap: 20px;">
+                        <div style="width: 44px; height: 44px; background: rgba(59, 130, 246, 0.15); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #60A5FA;">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                        </div>
+                        <span style="font-size: 18px; font-weight: 700; color: #fff;">{aud}</span>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+
+                <div class="fade-in-up" style="animation-delay: 0.4s;">
+                  <div style="display: flex; align-items: center; gap: 12px; color: #818CF8; margin-bottom: 24px;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg>
+                    <h2 style="font-size: 24px; font-weight: 800;">Timeline</h2>
+                  </div>
+                  <div class="glass-card" style="padding: 28px; position: relative; overflow: hidden;">
+                    <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: #4F46E5;"></div>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                      <span style="font-size: 11px; font-weight: 800; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.1em;">Target Completion</span>
+                      <div style="display: flex; align-items: baseline; gap: 10px;">
+                        <span style="font-size: 22px; font-weight: 900; color: #818CF8;">{e.when_doing?.split('–')[0] || 'TBD'}</span>
+                        <span style="color: rgba(255,255,255,0.2); font-size: 20px;">—</span>
+                        <span style="font-size: 22px; font-weight: 700; color: #fff;">{e.when_doing?.split('–')[1] || ''}</span>
+                      </div>
+                      {#if e.total_sp}
+                        <div style="margin-top: 16px; display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,0.5); font-size: 16px; font-weight: 600;">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+                          <span>{e.total_sp} Story Points</span>
+                        </div>
+                      {/if}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          {:else if s.type === 'retro-feedback'}
+            <!-- Interactive Retro Feedback Slide (Dark) -->
+            <div style="height:100%; padding:40px 60px; display:flex; flex-direction:column; gap:32px; overflow:hidden; font-family:'Inter', sans-serif;">
+              <div style="display:flex; justify-content:space-between; align-items:center;" class="fade-in-up">
+                <div>
+                  <h2 style="font-size:42px; font-weight:900; color:#fff; letter-spacing:-0.03em;">Feedback & Learnings</h2>
+                  <p style="font-size:18px; color:rgba(255,255,255,0.5); margin-top:4px;">Insights gathered from the team live</p>
+                </div>
+                <div class="glass-tag" style="background:rgba(79, 70, 229, 0.2); color:#818CF8; border-color:rgba(79, 70, 229, 0.3); margin-bottom:0;">
+                  <span style="display:flex; align-items:center; gap:8px;">
+                    <div style="width:8px; height:8px; background:#818CF8; border-radius:50%; animation: pulse 2s infinite;"></div>
+                    INTERACTIVE
+                  </span>
+                </div>
+              </div>
+
+              <div style="flex:1; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); grid-auto-rows:max-content; gap:28px; padding:6px;">
+                {#each s.data.items as item, i}
+                  <div class="glass-card fade-in-up" style="padding:32px; display:flex; flex-direction:column; gap:24px; animation-delay: {i * 0.05}s;">
+                    <div style="width:44px; height:44px; background:linear-gradient(135deg, #6366F1 0%, #4F46E5 100%); border-radius:12px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:900; font-size:18px; box-shadow:0 8px 20px rgba(79, 70, 229, 0.3);">
+                      {i+1}
+                    </div>
+                    <p style="font-size:22px; color:#fff; line-height:1.6; font-weight:500; letter-spacing:-0.01em;">{item}</p>
+                  </div>
+                {/each}
+                {#if s.data.items.length === 0}
+                  <div style="grid-column: 1 / -1; height: 240px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.03); border: 2px dashed rgba(255,255,255,0.1); border-radius: 24px; color: rgba(255,255,255,0.2); font-size: 20px; font-weight: 500;">
+                    Waiting for team feedback...
+                  </div>
+                {/if}
+              </div>
+
+              <!-- Live add feedback -->
+              <div class="fade-in-up" style="display:flex; gap:16px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); backdrop-filter: blur(20px); border-radius:20px; padding:12px 12px 12px 24px; box-shadow:0 20px 40px rgba(0,0,0,0.4); margin-bottom:40px; animation-delay: 0.2s;">
+                <input
+                  class="input"
+                  bind:value={newFeedback}
+                  placeholder="Share your thoughts live…"
+                  onkeydown={e => e.key === 'Enter' && addFeedbackItem()}
+                  style="flex:1; font-size:20px; border:none; background:transparent; outline:none; color:#fff; padding:12px 0;"
+                />
+                <button 
+                  class="btn" 
+                  onclick={addFeedbackItem} 
+                  disabled={addingFeedback || !newFeedback.trim()}
+                  style="background:#4F46E5; color:#fff; padding:0 32px; border-radius:14px; font-weight:800; font-size:16px; border:none; cursor:pointer; transition:all 200ms; height:56px;"
+                >
+                  {addingFeedback ? 'Adding...' : 'Post Feedback'}
+                </button>
+              </div>
+            </div>
+
+          {:else if s.type === 'closing'}
+            <!-- Closing Slide -->
             <div class="slide-content">
               <div style="font-size:80px; margin-bottom:32px; animation: bounce 2s infinite ease-in-out;">
                 {s.data.isRetro ? '🙏' : '🚀'}
@@ -516,15 +466,8 @@
                 {s.data.sprint}
               </p>
             </div>
-          </div>
-
-          <style>
-            @keyframes bounce {
-              0%, 100% { transform: translateY(0); }
-              50% { transform: translateY(-20px); }
-            }
-          </style>
-        {/if}
+          {/if}
+        </div>
       </div>
     {/if}
   </div>
@@ -670,6 +613,56 @@
     letter-spacing: 0.15em;
     color: rgba(255, 255, 255, 0.7);
     margin-bottom: 24px;
+  }
+
+  .glass-card {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 24px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    transition: transform 300ms ease, border-color 300ms ease;
+    position: relative;
+  }
+
+  .glass-card::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    padding: 2px;
+    border-radius: 24px;
+    background: linear-gradient(135deg, #818CF8, #C084FC, #F472B6);
+    -webkit-mask: 
+      linear-gradient(#fff 0 0) content-box, 
+      linear-gradient(#fff 0 0);
+    mask: 
+      linear-gradient(#fff 0 0) content-box, 
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    pointer-events: none;
+  }
+
+  .glass-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateY(-4px);
+  }
+
+  .glass-card:hover::before {
+    opacity: 1;
+  }
+
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-20px); }
   }
 </style>
 
