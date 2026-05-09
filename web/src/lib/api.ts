@@ -141,12 +141,14 @@ export interface IntroContent {
 	previous_data: PreviousData;
 	epics: Epic[];
 	contributors?: Contributor[];
+	closing_text?: string;
 }
 
 export interface RetroContent {
 	previous_data: PreviousData;
 	feedback: string[];
 	contributors?: Contributor[];
+	closing_text?: string;
 }
 
 // ─── API calls ────────────────────────────────────────────────────────────────

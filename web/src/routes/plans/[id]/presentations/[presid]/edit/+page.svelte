@@ -21,6 +21,7 @@
 
   // Shared state
   let contributors = $state<Contributor[]>([{ name: '', contribution: '' }]);
+  let closingText = $state('');
 
   // Retro state
   let retroFeedback = $state<string[]>(['']);
@@ -46,6 +47,7 @@
           prevData = c.previous_data ?? prevData;
           epics = c.epics?.length ? c.epics : [{ id:'', title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }];
           contributors = c.contributors?.length ? c.contributors : [{ name: '', contribution: '' }];
+          closingText = c.closing_text ?? '';
         }
       } else {
         const c = pres.content as RetroContent;
@@ -53,6 +55,7 @@
           retroFeedback = c.feedback?.length ? c.feedback : [''];
           prevData = c.previous_data ?? prevData;
           contributors = c.contributors?.length ? c.contributors : [{ name: '', contribution: '' }];
+          closingText = c.closing_text ?? '';
         }
       }
     } catch (e: any) { error = e.message; }
@@ -63,8 +66,8 @@
     saving = true;
     try {
       const content = pres?.type === 'intro'
-        ? { learnings: learnings.filter(l => l.content.trim()), changes: changes.filter(ch => ch.content.trim()), previous_data: prevData, epics, contributors: contributors.filter(c => c.name.trim()) } as IntroContent
-        : { previous_data: prevData, feedback: retroFeedback.filter(Boolean), contributors: contributors.filter(c => c.name.trim()) } as RetroContent;
+        ? { learnings: learnings.filter(l => l.content.trim()), changes: changes.filter(ch => ch.content.trim()), previous_data: prevData, epics, contributors: contributors.filter(c => c.name.trim()), closing_text: closingText } as IntroContent
+        : { previous_data: prevData, feedback: retroFeedback.filter(Boolean), contributors: contributors.filter(c => c.name.trim()), closing_text: closingText } as RetroContent;
       pres = await api.presentations.update(planID, presID, { title, sprint_name: sprintName, content });
     } catch (e: any) { error = e.message; }
     finally { saving = false; }
@@ -340,6 +343,20 @@
       </div>
     </div>
   {/if}
+
+  <!-- Closing Slide Customization -->
+  <div class="card">
+    <div class="card-header">
+      <div class="flex items-center gap-2"><span style="font-size:18px;">🎬</span><h2 class="font-semibold">Closing Slide</h2></div>
+    </div>
+    <div class="card-body">
+      <div class="form-group">
+        <label class="label">Custom Closing Text</label>
+        <input class="input" bind:value={closingText} placeholder={pres.type === 'intro' ? "Let's Ship It!" : "Thank You!"} />
+        <p class="text-muted" style="font-size:12px;margin-top:6px;">Leave empty to use the default text and emoji.</p>
+      </div>
+    </div>
+  </div>
 
 </div>
 {/if}

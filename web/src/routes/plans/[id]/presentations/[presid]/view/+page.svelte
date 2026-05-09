@@ -76,7 +76,7 @@
         s.push({ type: 'epic', data: epic });
       }
       // Closing slide
-      s.push({ type: 'closing', data: { sprint: pres.sprint_name } });
+      s.push({ type: 'closing', data: { sprint: pres.sprint_name, closing_text: c?.closing_text } });
     } else {
       const c = pres.content as RetroContent;
       s.push({ type: 'title', data: { title: pres.title, sprint: pres.sprint_name, isRetro: true } });
@@ -85,7 +85,7 @@
       }
       if (c?.previous_data) s.push({ type: 'metrics', data: c.previous_data });
       s.push({ type: 'retro-feedback', data: { items: c?.feedback ?? [], presID, planID } });
-      s.push({ type: 'closing', data: { sprint: pres.sprint_name, isRetro: true } });
+      s.push({ type: 'closing', data: { sprint: pres.sprint_name, isRetro: true, closing_text: c?.closing_text } });
     }
     slides = s;
   }
@@ -503,7 +503,7 @@
                 {s.data.isRetro ? '🙏' : '🚀'}
               </div>
               <h1 class="fade-in-up" style="font-size:clamp(40px, 8vw, 100px); font-weight:900; margin-bottom:16px; letter-spacing:-0.04em; background: linear-gradient(180deg, #FFFFFF 0%, rgba(255,255,255,0.7) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-                {s.data.isRetro ? 'Thank You!' : "Let's Ship It!"}
+                {s.data.closing_text || (s.data.isRetro ? 'Thank You!' : "Let's Ship It!")}
               </h1>
               <p class="fade-in-up" style="color:rgba(255,255,255,0.5); font-size:clamp(20px, 4vw, 36px); font-weight:500; animation-delay: 0.1s;">
                 {s.data.sprint}

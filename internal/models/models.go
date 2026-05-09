@@ -105,6 +105,7 @@ type IntroContent struct {
 	PreviousData PreviousData  `json:"previous_data"`
 	Epics        []Epic        `json:"epics"`
 	Contributors []Contributor `json:"contributors"`
+	ClosingText  string        `json:"closing_text"`
 }
 
 // RetroContent is the JSON structure for a Sprint Retro presentation
@@ -112,6 +113,7 @@ type RetroContent struct {
 	PreviousData PreviousData  `json:"previous_data"`
 	Feedback     []string      `json:"feedback"`
 	Contributors []Contributor `json:"contributors"`
+	ClosingText  string        `json:"closing_text"`
 }
 
 type PreviousData struct {
