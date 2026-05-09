@@ -437,33 +437,50 @@
 
         {:else if s.type === 'retro-feedback'}
           <!-- Interactive Retro Feedback Slide -->
-          <div style="background:#fff;height:100%;padding:32px;display:flex;flex-direction:column;gap:16px;overflow:hidden;">
+          <div style="background:#F9FAFB;height:100%;padding:40px 60px;display:flex;flex-direction:column;gap:32px;overflow:hidden;font-family:'Inter', sans-serif;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
-              <h2 style="font-size:clamp(24px,3.5vw,48px);font-weight:700;color:#1A1B2E;">💬 Feedback & Learnings</h2>
-              <span class="badge badge-purple" style="font-size:11px;">Interactive</span>
+              <div>
+                <h2 style="font-size:42px;font-weight:800;color:#1A1B2E;letter-spacing:-0.02em;">Feedback & Learnings</h2>
+                <p style="font-size:18px;color:#6B7280;margin-top:4px;">Insights gathered from the team during retrospective</p>
+              </div>
+              <span style="background:#EEF2FF; color:#4F46E5; padding:8px 16px; border-radius:20px; font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px; border:1px solid #E0E7FF;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                INTERACTIVE
+              </span>
             </div>
-            <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">
+
+            <div style="flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill, minmax(340px, 1fr));grid-auto-rows:max-content;gap:24px;padding:4px;">
               {#each s.data.items as item, i}
-                <div style="display:flex;gap:10px;align-items:flex-start;animation:fadeIn 300ms ease;">
-                  <span style="width:22px;height:22px;background:var(--c-purple-lt);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--c-purple);flex-shrink:0;">{i+1}</span>
-                  <p style="font-size:clamp(14px,1.8vw,22px);color:#374151;line-height:1.5;">{item}</p>
+                <div style="background:#fff; border:1px solid #E5E7EB; border-radius:16px; padding:28px; display:flex; flex-direction:column; gap:20px; position:relative; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); animation:fadeIn 400ms ease forwards;">
+                  <div style="width:40px; height:40px; background:linear-gradient(135deg, #6366F1 0%, #4F46E5 100%); border-radius:10px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:16px; box-shadow:0 4px 12px rgba(79, 70, 229, 0.25);">
+                    {i+1}
+                  </div>
+                  <p style="font-size:20px; color:#374151; line-height:1.6; font-weight:500;">{item}</p>
                 </div>
               {/each}
               {#if s.data.items.length === 0}
-                <p style="color:var(--c-text-3);font-size:14px;">No feedback yet. Use the form below to add items live.</p>
+                <div style="grid-column: 1 / -1; height: 200px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.5); border: 2px dashed #E5E7EB; border-radius: 16px; color: #9CA3AF; font-size: 18px;">
+                  Waiting for team feedback...
+                </div>
               {/if}
             </div>
+
             <!-- Live add feedback -->
-            <div style="display:flex;gap:10px;border-top:1px solid var(--c-border);padding-top:12px;padding-bottom:80px;">
+            <div style="display:flex;gap:16px;background:#fff;border:1px solid #E5E7EB;border-radius:16px;padding:16px 20px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1);margin-bottom:60px;">
               <input
                 class="input"
                 bind:value={newFeedback}
-                placeholder="Add a feedback item live…"
+                placeholder="Share your thoughts live…"
                 onkeydown={e => e.key === 'Enter' && addFeedbackItem()}
-                style="flex:1;font-size:18px;padding:12px 16px;"
+                style="flex:1;font-size:18px;border:none;background:transparent;outline:none;"
               />
-              <button class="btn btn-primary btn-sm" onclick={addFeedbackItem} disabled={addingFeedback || !newFeedback.trim()}>
-                {addingFeedback ? '…' : '+ Add'}
+              <button 
+                class="btn btn-primary" 
+                onclick={addFeedbackItem} 
+                disabled={addingFeedback || !newFeedback.trim()}
+                style="padding:10px 24px;border-radius:10px;font-weight:700;font-size:16px;"
+              >
+                {addingFeedback ? 'Adding...' : 'Post Feedback'}
               </button>
             </div>
           </div>
