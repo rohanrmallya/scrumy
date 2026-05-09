@@ -18,6 +18,7 @@
   let slides = $state<{ type: string; data: any }[]>([]);
 
   onMount(async () => {
+    document.body.style.overflow = 'hidden';
     pres = await api.presentations.get(planID, presID);
     buildSlides();
     loading = false;
@@ -28,6 +29,7 @@
   });
 
   onDestroy(() => {
+    document.body.style.overflow = '';
     window.removeEventListener('keydown', onKey);
     document.removeEventListener('fullscreenchange', handleFSChange);
   });
@@ -525,8 +527,3 @@
 </div>
 {/if}
 
-<style>
-  :global(body) {
-    overflow: hidden;
-  }
-</style>
