@@ -117,9 +117,21 @@ export interface Epic {
 	total_sp: number;
 }
 
+export interface Learning {
+	title: string;
+	content: string;
+	tags: string[];
+}
+
+export interface Change {
+	title: string;
+	content: string;
+	tags: string[];
+}
+
 export interface IntroContent {
-	learnings: string[];
-	changes: string[];
+	learnings: Learning[];
+	changes: Change[];
 	previous_data: PreviousData;
 	epics: Epic[];
 }

@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { api, type Presentation, type IntroContent, type RetroContent, type PreviousData, type Epic } from '$lib/api';
+  import { api, type Presentation, type IntroContent, type RetroContent, type PreviousData, type Epic, type Learning, type Change } from '$lib/api';
 
   const planID = $derived($page.params.id);
   const presID = $derived($page.params.presid);
@@ -14,8 +14,8 @@
   let error = $state('');
 
   // Intro state
-  let learnings = $state<string[]>(['']);
-  let changes = $state<string[]>(['']);
+  let learnings = $state<Learning[]>([{ title: '', content: '', tags: [] }]);
+  let changes = $state<Change[]>([{ title: '', content: '', tags: [] }]);
   let prevData = $state<PreviousData>({ total_sp_delivered:0, total_hours_logged:0, total_work_logs:0, avg_hours_per_sp:0, planned_sp:0, executed_sp:0, spillovers:0, total_epics_delivered:0 });
   let epics = $state<Epic[]>([{ title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }]);
 
@@ -33,8 +33,13 @@
       if (pres.type === 'intro') {
         const c = pres.content as IntroContent;
         if (c) {
-          learnings = c.learnings?.length ? c.learnings : [''];
-          changes = c.changes?.length ? c.changes : [''];
+          // Migrate old string data to new Learning/Change objects
+          learnings = (c.learnings ?? []).map((l: any) => typeof l === 'string' ? { title: '', content: l, tags: [] } : l);
+          if (learnings.length === 0) learnings = [{ title: '', content: '', tags: [] }];
+          
+          changes = (c.changes ?? []).map((ch: any) => typeof ch === 'string' ? { title: '', content: ch, tags: [] } : ch);
+          if (changes.length === 0) changes = [{ title: '', content: '', tags: [] }];
+          
           prevData = c.previous_data ?? prevData;
           epics = c.epics?.length ? c.epics : [{ title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }];
         }
@@ -53,7 +58,7 @@
     saving = true;
     try {
       const content = pres?.type === 'intro'
-        ? { learnings: learnings.filter(Boolean), changes: changes.filter(Boolean), previous_data: prevData, epics } as IntroContent
+        ? { learnings: learnings.filter(l => l.content.trim()), changes: changes.filter(ch => ch.content.trim()), previous_data: prevData, epics } as IntroContent
         : { previous_data: prevData, feedback: retroFeedback.filter(Boolean) } as RetroContent;
       pres = await api.presentations.update(planID, presID, { title, sprint_name: sprintName, content });
     } catch (e: any) { error = e.message; }
@@ -71,9 +76,9 @@
     pres = await api.presentations.unpublish(planID, presID);
   }
 
-  function addLearning() { learnings = [...learnings, '']; }
+  function addLearning() { learnings = [...learnings, { title: '', content: '', tags: [] }]; }
   function removeLearning(i: number) { learnings = learnings.filter((_,j) => j !== i); }
-  function addChange() { changes = [...changes, '']; }
+  function addChange() { changes = [...changes, { title: '', content: '', tags: [] }]; }
   function removeChange(i: number) { changes = changes.filter((_,j) => j !== i); }
   function addEpic() { epics = [...epics, { title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }]; }
   function removeEpic(i: number) { epics = epics.filter((_,j) => j !== i); }
@@ -184,29 +189,54 @@
           <div class="flex items-center gap-2"><span>💡</span><h2 class="font-semibold">Learnings</h2></div>
           <button class="btn btn-ghost btn-sm" onclick={addLearning}>+ Add</button>
         </div>
-        <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
+        <div class="card-body" style="display:flex;flex-direction:column;gap:20px;">
           {#each learnings as l, i (i)}
-            <div class="flex gap-2 items-center">
-              <span class="text-xs font-semibold text-muted" style="width:18px;text-align:right;">{i+1}</span>
-              <input class="input grow" bind:value={learnings[i]} placeholder="What went well or what did we learn?" />
-              {#if learnings.length > 1}<button class="btn-icon" style="color:var(--c-danger);" onclick={() => removeLearning(i)}>✕</button>{/if}
+            <div style="border-left:3px solid var(--c-purple);padding-left:16px;display:flex;flex-direction:column;gap:10px;position:relative;">
+              <div class="flex justify-between items-center">
+                <input class="input grow" bind:value={learnings[i].title} placeholder="Heading (e.g. Deployment Velocity)" style="font-weight:600;" />
+                {#if learnings.length > 1}<button class="btn-icon" style="color:var(--c-danger);" onclick={() => removeLearning(i)}>🗑</button>{/if}
+              </div>
+              <textarea class="input" bind:value={learnings[i].content} placeholder="What did we learn? (Content)" rows="2"></textarea>
+              <div class="flex items-center gap-2">
+                <span style="font-size:11px;color:var(--c-text-3);text-transform:uppercase;font-weight:600;">Tags:</span>
+                <input class="input" 
+                  value={learnings[i].tags.join(', ')} 
+                  oninput={e => learnings[i].tags = e.currentTarget.value.split(',').map(t => t.trim()).filter(Boolean)} 
+                  placeholder="e.g. DEVOPS, PROCESS" 
+                  style="font-size:12px;padding:4px 8px;" 
+                />
+              </div>
             </div>
           {/each}
         </div>
+
       </div>
       <div class="card">
         <div class="card-header">
           <div class="flex items-center gap-2"><span>🔄</span><h2 class="font-semibold">Changes</h2></div>
           <button class="btn btn-ghost btn-sm" onclick={addChange}>+ Add</button>
         </div>
-        <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
-          {#each changes as c, i (i)}
-            <div class="flex gap-2 items-center">
-              <textarea class="input grow" bind:value={changes[i]} placeholder="Describe process or priority changes…" rows="2"></textarea>
-              {#if changes.length > 1}<button class="btn-icon" style="color:var(--c-danger);" onclick={() => removeChange(i)}>✕</button>{/if}
+        <div class="card-body" style="display:flex;flex-direction:column;gap:20px;">
+          {#each changes as ch, i (i)}
+            <div style="border-left:3px solid var(--c-success);padding-left:16px;display:flex;flex-direction:column;gap:10px;position:relative;">
+              <div class="flex justify-between items-center">
+                <input class="input grow" bind:value={changes[i].title} placeholder="Heading (e.g. CI/CD Pipeline)" style="font-weight:600;" />
+                {#if changes.length > 1}<button class="btn-icon" style="color:var(--c-danger);" onclick={() => removeChange(i)}>🗑</button>{/if}
+              </div>
+              <textarea class="input" bind:value={changes[i].content} placeholder="Describe the change…" rows="2"></textarea>
+              <div class="flex items-center gap-2">
+                <span style="font-size:11px;color:var(--c-text-3);text-transform:uppercase;font-weight:600;">Tags:</span>
+                <input class="input" 
+                  value={changes[i].tags.join(', ')} 
+                  oninput={e => changes[i].tags = e.currentTarget.value.split(',').map(t => t.trim()).filter(Boolean)} 
+                  placeholder="e.g. AUTOMATION, INFRA" 
+                  style="font-size:12px;padding:4px 8px;" 
+                />
+              </div>
             </div>
           {/each}
         </div>
+
       </div>
     </div>
 

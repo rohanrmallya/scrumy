@@ -56,7 +56,15 @@
       // Metrics from previous sprint
       if (c?.previous_data) s.push({ type: 'metrics', data: c.previous_data });
       // Learnings slide
-      if (c?.learnings?.length) s.push({ type: 'learnings', data: { items: c.learnings, changes: c.changes } });
+      if (c?.learnings?.length) {
+        const items = c.learnings.map((l: any) => typeof l === 'string' ? { title: '', content: l, tags: [] } : l);
+        s.push({ type: 'learnings', data: { items } });
+      }
+      // Changes slide
+      if (c?.changes?.length) {
+        const items = c.changes.map((ch: any) => typeof ch === 'string' ? { title: '', content: ch, tags: [] } : ch);
+        s.push({ type: 'changes', data: { items } });
+      }
       // Epic slides
       for (const epic of (c?.epics ?? [])) {
         s.push({ type: 'epic', data: epic });
@@ -140,56 +148,191 @@
 
         {:else if s.type === 'metrics'}
           {@const d = s.data as PreviousData}
+          {@const sc = d.spillovers === 0 ? { bg:'#F0FDF4', border:'#DCFCE7', text:'#16A34A' } : d.spillovers <= 8 ? { bg:'#FFFBEB', border:'#FEF3C7', text:'#D97706' } : { bg:'#FFFBFB', border:'#FEE2E2', text:'#EF4444' }}
           <!-- Metrics Slide -->
-          <div style="background:#fff;height:100%;padding:40px;display:flex;flex-direction:column;">
-            <h2 style="font-size:clamp(24px,3.5vw,48px);font-weight:700;color:#1A1B2E;margin-bottom:28px;">📊 Previous Sprint Metrics</h2>
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;flex:1;">
-              {#each [
-                { label:'Story Points', value: d.total_sp_delivered, color: '#4C6EF5' },
-                { label:'Hours Logged', value: d.total_hours_logged, color: '#10B981' },
-                { label:'Work Logs', value: d.total_work_logs, color: '#F59E0B' },
-                { label:'Hrs / SP', value: d.avg_hours_per_sp.toFixed(1), color: '#8B5CF6' },
-                { label:'Planned SP', value: d.planned_sp, color: '#4C6EF5' },
-                { label:'Executed SP', value: d.executed_sp, color: '#10B981' },
-                { label:'Spillovers', value: d.spillovers, color: '#EF4444' },
-              ] as stat}
-                <div style="background:var(--c-bg);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:8px;">
-                  <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--c-text-3);">{stat.label}</span>
-                  <span style="font-size:clamp(28px,4.5vw,64px);font-weight:700;color:{stat.color};">{stat.value}</span>
+          <div style="background:#fff;height:100%;padding:40px 60px;display:flex;flex-direction:column;font-family:'Inter', sans-serif;">
+            <div style="margin-bottom:40px;">
+              <h1 style="font-size:42px;font-weight:700;color:#1A1B2E;margin-bottom:8px;letter-spacing:-0.02em;">Sprint Review: Metrics</h1>
+              <p style="font-size:18px;color:#6B7280;">Data from previous sprint</p>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1.2fr 1fr 1fr;grid-template-rows:repeat(3, minmax(0, 1fr));gap:24px;flex:1;margin-bottom:40px;">
+              
+              <!-- Total Story Points Delivered (Span 2 rows) -->
+              <div style="grid-row: span 2; background:#F8FAFF; border:1px solid #E0E7FF; border-radius:12px; padding:32px; display:flex; flex-direction:column; position:relative;">
+                <span style="font-size:12px; font-weight:700; color:#4C6EF5; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:auto;">Total Story Points Delivered</span>
+                <div style="position:absolute; top:32px; right:32px; width:40px; height:40px; background:#DDE6FF; border-radius:50%; display:flex; align-items:center; justify-content:center;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4C6EF5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </div>
+                <div style="margin-bottom:12px;">
+                  <span style="font-size:120px; font-weight:800; color:#1A1B2E; line-height:1;">{d.total_sp_delivered}</span> story points
+                </div>
+              </div>
+
+              <!-- Total Epics Delivered -->
+              <div style="background:#fff; border:1px solid #E5E7EB; border-radius:12px; padding:24px; display:flex; flex-direction:column; justify-content:space-between;">
+                <span style="font-size:12px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.05em;">Total Epics Delivered</span>
+                <div style="display:flex; align-items:baseline; gap:8px;">
+                  <span style="font-size:48px; font-weight:800; color:#1A1B2E;">{d.total_epics_delivered}</span>
+                  <span style="font-size:18px; color:#6B7280;">epics</span>
+                </div>
+              </div>
+
+              <!-- Spillovers -->
+              <div style="background:{sc.bg}; border:1px solid {sc.border}; border-radius:12px; padding:24px; display:flex; flex-direction:column; justify-content:space-between; position:relative;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                  <span style="font-size:12px; font-weight:700; color:{sc.text}; text-transform:uppercase; letter-spacing:0.05em;">Spillovers</span>
+                  {#if d.spillovers === 0}
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{sc.text}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  {:else}
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{sc.text}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  {/if}
+                </div>
+                <div style="display:flex; align-items:baseline; gap:8px;">
+                  <span style="font-size:48px; font-weight:800; color:{sc.text};">{d.spillovers}</span>
+                  <span style="font-size:18px; color:{sc.text}; opacity:0.8;">pts</span>
+                </div>
+              </div>
+
+
+              <!-- Total Work Logged (Span 2 columns) -->
+              <div style="grid-column: span 2; background:#F9FAFB; border:1px solid #E5E7EB; border-radius:12px; padding:24px; display:flex; flex-direction:column; justify-content:space-between;">
+                <span style="font-size:12px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.05em;">Total Work Logged</span>
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                  <div style="display:flex; align-items:baseline; gap:8px;">
+                    <span style="font-size:48px; font-weight:800; color:#1A1B2E;">{d.total_hours_logged}</span>
+                    <span style="font-size:18px; color:#6B7280;">hours</span>
+                  </div>
+                  <div style="width:240px; height:12px; background:#E5E7EB; border-radius:6px; overflow:hidden;">
+                    <div style="width:75%; height:100%; background:#4B5563; border-radius:6px;"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Hrs / Story Point -->
+              <div style="background:#fff; border:1px solid #E5E7EB; border-radius:12px; padding:24px; display:flex; flex-direction:column; justify-content:space-between;">
+                <span style="font-size:12px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.05em;">Hrs / Story Point</span>
+                <div style="display:flex; align-items:baseline; gap:8px;">
+                  <span style="font-size:48px; font-weight:800; color:#1A1B2E;">{d.avg_hours_per_sp.toFixed(1)}</span>
+                  <span style="font-size:18px; color:#6B7280;">avg</span>
+                </div>
+              </div>
+
+              <!-- Capacity Comparison (Span 2 columns) -->
+              <div style="grid-column: span 2; background:#F9FAFB; border:1px solid #E5E7EB; border-radius:12px; padding:32px; display:flex; flex-direction:column; gap:20px;">
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                  <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; color:#4B5563; text-transform:uppercase; letter-spacing:0.05em;">
+                    <span>Planned Capacity</span>
+                    <span>{d.planned_sp} pts</span>
+                  </div>
+                  <div style="width:100%; height:10px; background:#E5E7EB; border-radius:5px; overflow:hidden;">
+                    <div style="width:100%; height:100%; background:#6B7280;"></div>
+                  </div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                  <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; color:#4C6EF5; text-transform:uppercase; letter-spacing:0.05em;">
+                    <span>Executed Capacity</span>
+                    <span>{d.executed_sp} pts</span>
+                  </div>
+                  <div style="width:100%; height:10px; background:#E5E7EB; border-radius:5px; overflow:hidden;">
+                    <div style="width:{(d.executed_sp / d.planned_sp) * 100}%; height:100%; background:#4C6EF5;"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div style="border-top:1px solid #E5E7EB; padding-top:20px; display:flex; justify-content:space-between; align-items:center; color:#9CA3AF; font-size:13px; font-weight:600;">
+              <div>{pres?.sprint_name ?? 'Sprint 42'} • Q3</div>
+              <div>Generated: Today, 09:00 AM</div>
+            </div>
+          </div>
+
+
+        {:else if s.type === 'learnings'}
+          <!-- Team Learnings Slide -->
+          <div style="background:#F3F4F6;height:100%;padding:40px 60px;display:flex;flex-direction:column;font-family:'Inter', sans-serif;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:40px;">
+              <div>
+                <h1 style="font-size:42px;font-weight:700;color:#1A1B2E;margin-bottom:8px;letter-spacing:-0.02em;">Team Learnings</h1>
+                <p style="font-size:18px;color:#6B7280;">{pres?.sprint_name ?? 'Sprint 42'} Retrospective Insights</p>
+              </div>
+              <div style="background:#0066FF; color:#fff; padding:6px 16px; border-radius:20px; font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                {pres?.sprint_name ?? 'Sprint 42'}
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:repeat(auto-fill, minmax(140px, 1fr)); gap:24px; flex:1;">
+              {#each s.data.items as item, i}
+                {@const gradients = [
+                  'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
+                  'linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%)',
+                  'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)',
+                  'linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)',
+                  'linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)',
+                  'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+                  'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)'
+                ]}
+                {@const gradient = gradients[i % gradients.length]}
+                <div style="background:#fff; border:1px solid #E5E7EB; border-radius:12px; padding:24px; display:flex; gap:20px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                  <div style="width:48px; height:48px; border-radius:12px; flex-shrink:0; background:{gradient};"></div>
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+
+                    <h3 style="font-size:20px; font-weight:700; color:#1A1B2E; line-height:1.2;">{item.title || 'Key Insight'}</h3>
+                    <p style="font-size:14px; color:#4B5563; line-height:1.5; margin-bottom:12px;">{item.content}</p>
+                    <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                      {#each (item.tags ?? []) as tag}
+                        <span style="background:#F3F4F6; color:#6B7280; padding:3px 8px; border-radius:4px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">{tag}</span>
+                      {/each}
+                    </div>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {:else if s.type === 'changes'}
+          <!-- Process Changes Slide -->
+          <div style="background:#FDFCFB;height:100%;padding:40px 60px;display:flex;flex-direction:column;font-family:'Inter', sans-serif;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:40px;">
+              <div>
+                <h1 style="font-size:42px;font-weight:700;color:#1A1B2E;margin-bottom:8px;letter-spacing:-0.02em;">Process Changes</h1>
+                <p style="font-size:18px;color:#6B7280;">Strategic adjustments for {pres?.sprint_name ?? 'the next sprint'}</p>
+              </div>
+              <div style="background:#10B981; color:#fff; padding:6px 16px; border-radius:20px; font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                IMPROVEMENT
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:repeat(auto-fill, minmax(140px, 1fr)); gap:24px; flex:1;">
+              {#each s.data.items as item, i}
+                {@const gradients = [
+                  'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+                  'linear-gradient(135deg, #5ee7df 0%, #b490ca 100%)',
+                  'linear-gradient(135deg, #c31432 0%, #240b36 100%)',
+                  'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+                  'linear-gradient(135deg, #ee9ca7 0%, #ffdde1 100%)',
+                  'linear-gradient(135deg, #6a11cb 0%, #2575fc 100%)'
+                ]}
+                {@const gradient = gradients[i % gradients.length]}
+                <div style="background:#fff; border:1px solid #E5E7EB; border-radius:12px; padding:24px; display:flex; gap:20px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                  <div style="width:48px; height:48px; border-radius:12px; flex-shrink:0; background:{gradient};"></div>
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <h3 style="font-size:20px; font-weight:700; color:#1A1B2E; line-height:1.2;">{item.title || 'Process Update'}</h3>
+                    <p style="font-size:14px; color:#4B5563; line-height:1.5; margin-bottom:12px;">{item.content}</p>
+                    <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                      {#each (item.tags ?? []) as tag}
+                        <span style="background:#ECFDF5; color:#059669; padding:3px 8px; border-radius:4px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">{tag}</span>
+                      {/each}
+                    </div>
+                  </div>
                 </div>
               {/each}
             </div>
           </div>
 
-        {:else if s.type === 'learnings'}
-          <!-- Learnings + Changes Slide -->
-          <div style="background:#fff;height:100%;padding:40px;display:flex;flex-direction:column;gap:20px;">
-            <h2 style="font-size:clamp(24px,3.5vw,48px);font-weight:700;color:#1A1B2E;">💡 Learnings & Changes</h2>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;flex:1;">
-              <div>
-                <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:0.1em;color:var(--c-text-3);margin-bottom:12px;">Key Learnings</h3>
-                <div style="display:flex;flex-direction:column;gap:10px;">
-                  {#each s.data.items as item, i}
-                    <div style="display:flex;gap:10px;align-items:flex-start;">
-                      <span style="width:22px;height:22px;background:var(--c-primary-lt);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--c-primary);flex-shrink:0;">{i+1}</span>
-                      <p style="font-size:clamp(14px,1.8vw,22px);color:#374151;line-height:1.5;">{item}</p>
-                    </div>
-                  {/each}
-                </div>
-              </div>
-              <div>
-                <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:0.1em;color:var(--c-text-3);margin-bottom:12px;">Changes This Sprint</h3>
-                <div style="display:flex;flex-direction:column;gap:10px;">
-                  {#each (s.data.changes ?? []) as item}
-                    <div style="display:flex;gap:10px;align-items:flex-start;">
-                      <span style="width:8px;height:8px;background:var(--c-success);border-radius:50%;margin-top:6px;flex-shrink:0;"></span>
-                      <p style="font-size:clamp(14px,1.8vw,22px);color:#374151;line-height:1.5;">{item}</p>
-                    </div>
-                  {/each}
-                </div>
-              </div>
-            </div>
-          </div>
 
         {:else if s.type === 'epic'}
           {@const e = s.data as Epic}

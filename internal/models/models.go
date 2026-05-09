@@ -81,11 +81,22 @@ type Presentation struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 	Content    any       `json:"content,omitempty"`
 }
+type Learning struct {
+	Title   string   `json:"title"`
+	Content string   `json:"content"`
+	Tags    []string `json:"tags"`
+}
+
+type Change struct {
+	Title   string   `json:"title"`
+	Content string   `json:"content"`
+	Tags    []string `json:"tags"`
+}
 
 // IntroContent is the JSON structure for a Scrum Intro presentation
 type IntroContent struct {
-	Learnings    []string      `json:"learnings"`
-	Changes      []string      `json:"changes"`
+	Learnings    []Learning    `json:"learnings"`
+	Changes      []Change      `json:"changes"`
 	PreviousData PreviousData  `json:"previous_data"`
 	Epics        []Epic        `json:"epics"`
 }
