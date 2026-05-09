@@ -1,0 +1,276 @@
+<script lang="ts">
+  import { page } from '$app/stores';
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { api, type Presentation, type IntroContent, type RetroContent, type PreviousData, type Epic } from '$lib/api';
+
+  const planID = $derived($page.params.id);
+  const presID = $derived($page.params.presid);
+
+  let pres = $state<Presentation | null>(null);
+  let loading = $state(true);
+  let saving = $state(false);
+  let publishing = $state(false);
+  let error = $state('');
+
+  // Intro state
+  let learnings = $state<string[]>(['']);
+  let changes = $state<string[]>(['']);
+  let prevData = $state<PreviousData>({ total_sp_delivered:0, total_hours_logged:0, total_work_logs:0, avg_hours_per_sp:0, planned_sp:0, executed_sp:0, spillovers:0, total_epics_delivered:0 });
+  let epics = $state<Epic[]>([{ title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }]);
+
+  // Retro state
+  let retroFeedback = $state<string[]>(['']);
+
+  let title = $state('');
+  let sprintName = $state('');
+
+  onMount(async () => {
+    try {
+      pres = await api.presentations.get(planID, presID);
+      title = pres.title;
+      sprintName = pres.sprint_name;
+      if (pres.type === 'intro') {
+        const c = pres.content as IntroContent;
+        if (c) {
+          learnings = c.learnings?.length ? c.learnings : [''];
+          changes = c.changes?.length ? c.changes : [''];
+          prevData = c.previous_data ?? prevData;
+          epics = c.epics?.length ? c.epics : [{ title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }];
+        }
+      } else {
+        const c = pres.content as RetroContent;
+        if (c) {
+          retroFeedback = c.feedback?.length ? c.feedback : [''];
+          prevData = c.previous_data ?? prevData;
+        }
+      }
+    } catch (e: any) { error = e.message; }
+    finally { loading = false; }
+  });
+
+  async function save() {
+    saving = true;
+    try {
+      const content = pres?.type === 'intro'
+        ? { learnings: learnings.filter(Boolean), changes: changes.filter(Boolean), previous_data: prevData, epics } as IntroContent
+        : { previous_data: prevData, feedback: retroFeedback.filter(Boolean) } as RetroContent;
+      pres = await api.presentations.update(planID, presID, { title, sprint_name: sprintName, content });
+    } catch (e: any) { error = e.message; }
+    finally { saving = false; }
+  }
+
+  async function publishPres() {
+    publishing = true;
+    await save();
+    pres = await api.presentations.publish(planID, presID);
+    publishing = false;
+  }
+
+  async function unpublishPres() {
+    pres = await api.presentations.unpublish(planID, presID);
+  }
+
+  function addLearning() { learnings = [...learnings, '']; }
+  function removeLearning(i: number) { learnings = learnings.filter((_,j) => j !== i); }
+  function addChange() { changes = [...changes, '']; }
+  function removeChange(i: number) { changes = changes.filter((_,j) => j !== i); }
+  function addEpic() { epics = [...epics, { title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }]; }
+  function removeEpic(i: number) { epics = epics.filter((_,j) => j !== i); }
+  function addFeedback() { retroFeedback = [...retroFeedback, '']; }
+  function removeFeedback(i: number) { retroFeedback = retroFeedback.filter((_,j) => j !== i); }
+</script>
+
+<svelte:head>
+  <title>{title || 'Edit Presentation'} – Scrumy</title>
+</svelte:head>
+
+<div style="background:var(--c-surface);border-bottom:1px solid var(--c-border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:56px;z-index:99;">
+  <div class="flex items-center gap-3">
+    <a href="/plans/{planID}" class="btn-icon" style="font-size:18px;">←</a>
+    <div>
+      <h1 class="font-semibold" style="font-size:16px;">{title || 'Edit Presentation'}</h1>
+      {#if pres}<span class="badge {pres.status === 'published' ? 'badge-success' : 'badge-warning'}">{pres.status}</span>{/if}
+    </div>
+  </div>
+  <div class="flex gap-2">
+    {#if pres?.status === 'published'}
+      <a href="/plans/{planID}/presentations/{presID}/view" class="btn btn-secondary">▶ Preview</a>
+      <button class="btn btn-ghost btn-sm" onclick={unpublishPres}>Unpublish</button>
+    {:else}
+      <button class="btn btn-secondary" onclick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Draft'}</button>
+      <button class="btn btn-primary" onclick={publishPres} disabled={publishing}>
+        {publishing ? 'Publishing…' : '✓ Publish'}
+      </button>
+    {/if}
+  </div>
+</div>
+
+{#if error}
+  <div style="padding:8px 24px;background:var(--c-danger-lt);color:var(--c-danger);font-size:13px;">⚠️ {error}</div>
+{/if}
+
+{#if loading}
+  <div class="flex items-center gap-3" style="padding:40px 24px"><span class="spinner"></span><span class="text-muted">Loading…</span></div>
+{:else if pres}
+<div style="max-width:900px;margin:0 auto;padding:24px 24px 80px;display:flex;flex-direction:column;gap:20px;">
+
+  <div class="card">
+    <div class="card-body grid-2">
+      <div class="form-group">
+        <label class="label">Presentation Title</label>
+        <input class="input" bind:value={title} placeholder="e.g. Sprint 24 Intro" />
+      </div>
+      <div class="form-group">
+        <label class="label">Sprint Name</label>
+        <input class="input" bind:value={sprintName} placeholder="e.g. Sprint 24 – 25" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Data from previous sprint -->
+  <div class="card">
+    <div class="card-header">
+      <div class="flex items-center gap-2"><span style="font-size:18px;">📊</span><h2 class="font-semibold">Data from previous sprint</h2></div>
+    </div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:16px;">
+      <div class="grid-3">
+        <div class="form-group">
+          <label class="label">Total Story Points Delivered</label>
+          <input type="number" class="input" bind:value={prevData.total_sp_delivered} min="0" />
+        </div>
+        {#if pres.type === 'intro'}
+          <div class="form-group">
+            <label class="label">Total Epics Delivered</label>
+            <input type="number" class="input" bind:value={prevData.total_epics_delivered} min="0" />
+          </div>
+        {/if}
+        <div class="form-group">
+          <label class="label">Total Work Logged (hrs)</label>
+          <input type="number" class="input" bind:value={prevData.total_hours_logged} min="0" />
+        </div>
+      </div>
+      <div class="grid-3">
+        <div class="form-group">
+          <label class="label">Hours per Story Point</label>
+          <input type="number" class="input" bind:value={prevData.avg_hours_per_sp} min="0" step="0.1" />
+        </div>
+        <div class="form-group">
+          <label class="label">Spillovers</label>
+          <input type="number" class="input" bind:value={prevData.spillovers} min="0" />
+        </div>
+        <div class="form-group">
+          <label class="label">Total Work Logs</label>
+          <input type="number" class="input" bind:value={prevData.total_work_logs} min="0" />
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="label">Planned Capacity (pts)</label>
+          <input type="number" class="input" bind:value={prevData.planned_sp} min="0" />
+        </div>
+        <div class="form-group">
+          <label class="label">Executed Capacity (pts)</label>
+          <input type="number" class="input" bind:value={prevData.executed_sp} min="0" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {#if pres.type === 'intro'}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div class="card">
+        <div class="card-header">
+          <div class="flex items-center gap-2"><span>💡</span><h2 class="font-semibold">Learnings</h2></div>
+          <button class="btn btn-ghost btn-sm" onclick={addLearning}>+ Add</button>
+        </div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
+          {#each learnings as l, i (i)}
+            <div class="flex gap-2 items-center">
+              <span class="text-xs font-semibold text-muted" style="width:18px;text-align:right;">{i+1}</span>
+              <input class="input grow" bind:value={learnings[i]} placeholder="What went well or what did we learn?" />
+              {#if learnings.length > 1}<button class="btn-icon" style="color:var(--c-danger);" onclick={() => removeLearning(i)}>✕</button>{/if}
+            </div>
+          {/each}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="flex items-center gap-2"><span>🔄</span><h2 class="font-semibold">Changes</h2></div>
+          <button class="btn btn-ghost btn-sm" onclick={addChange}>+ Add</button>
+        </div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
+          {#each changes as c, i (i)}
+            <div class="flex gap-2 items-center">
+              <textarea class="input grow" bind:value={changes[i]} placeholder="Describe process or priority changes…" rows="2"></textarea>
+              {#if changes.length > 1}<button class="btn-icon" style="color:var(--c-danger);" onclick={() => removeChange(i)}>✕</button>{/if}
+            </div>
+          {/each}
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="flex items-center gap-2"><span style="font-size:18px;">🗂</span><h2 class="font-semibold">Current Epics</h2></div>
+        <span class="badge badge-default">{epics.length} {epics.length === 1 ? 'Entry' : 'Entries'}</span>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:20px;">
+        {#each epics as epic, i (i)}
+          <div style="border-left:3px solid var(--c-primary);padding-left:16px;display:flex;flex-direction:column;gap:12px;">
+            <div class="flex justify-between items-center">
+              <input class="input grow" bind:value={epics[i].title} placeholder="Epic Title" style="font-size:15px;font-weight:500;" />
+              {#if epics.length > 1}<button class="btn-icon" style="color:var(--c-danger);" onclick={() => removeEpic(i)}>🗑</button>{/if}
+            </div>
+            <div class="form-group">
+              <label class="label">Summary</label>
+              <textarea class="input" bind:value={epics[i].summary} placeholder="Brief overview of the Epic…" rows="2"></textarea>
+            </div>
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="label">Why we need it?</label>
+                <textarea class="input" bind:value={epics[i].why_needed} placeholder="Business value or problem solved" rows="2"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="label">Who is going to consume it?</label>
+                <textarea class="input" bind:value={epics[i].audience} placeholder="Target audience / stakeholder" rows="2"></textarea>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="form-group">
+                <label class="label">When are we doing it?</label>
+                <input class="input" bind:value={epics[i].when_doing} placeholder="e.g., Sprint 25 – 26" />
+              </div>
+              <div class="form-group">
+                <label class="label">Total Story Points Planned</label>
+                <input type="number" class="input" bind:value={epics[i].total_sp} min="0" />
+              </div>
+            </div>
+          </div>
+        {/each}
+        <button
+          style="width:100%;padding:12px;border:2px dashed var(--c-border-2);border-radius:var(--r);background:none;cursor:pointer;color:var(--c-primary);font-size:14px;font-family:inherit;"
+          onclick={addEpic}
+        >+ Add Another Epic</button>
+      </div>
+    </div>
+  {:else}
+    <div class="card">
+      <div class="card-header">
+        <div class="flex items-center gap-2"><span>💬</span><h2 class="font-semibold">Feedback & Learnings</h2></div>
+        <button class="btn btn-ghost btn-sm" onclick={addFeedback}>+ Add Item</button>
+      </div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
+        {#each retroFeedback as f, i (i)}
+          <div class="flex gap-2 items-start">
+            <span class="text-xs font-semibold text-muted" style="width:18px;text-align:right;padding-top:9px;">{i+1}</span>
+            <textarea class="input grow" bind:value={retroFeedback[i]} placeholder="What went well, what can be improved, action items…" rows="2"></textarea>
+            {#if retroFeedback.length > 1}<button class="btn-icon" style="color:var(--c-danger);margin-top:4px;" onclick={() => removeFeedback(i)}>✕</button>{/if}
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
+</div>
+{/if}

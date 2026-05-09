@@ -1,0 +1,41 @@
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+scrumy
+vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Node / SvelteKit
+web/node_modules/
+node_modules/
+web/.svelte-kit/
+.svelte-kit/
+web/dist/
+dist/
+web/build/
+.env
+.env.*
+!.env.example
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Agents & AI
+.agents/
+.gemini/
