@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { api, type Presentation, type IntroContent, type RetroContent, type PreviousData, type Epic, type Learning, type Change } from '$lib/api';
+  import { api, type Presentation, type IntroContent, type RetroContent, type PreviousData, type Epic, type Learning, type Change, type Contributor } from '$lib/api';
 
   const planID = $derived($page.params.id);
   const presID = $derived($page.params.presid);
@@ -18,6 +18,9 @@
   let changes = $state<Change[]>([{ title: '', content: '', tags: [] }]);
   let prevData = $state<PreviousData>({ total_sp_delivered:0, total_hours_logged:0, total_work_logs:0, avg_hours_per_sp:0, planned_sp:0, executed_sp:0, spillovers:0, total_epics_delivered:0 });
   let epics = $state<Epic[]>([{ id:'', title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }]);
+
+  // Shared state
+  let contributors = $state<Contributor[]>([{ name: '', contribution: '' }]);
 
   // Retro state
   let retroFeedback = $state<string[]>(['']);
@@ -42,12 +45,14 @@
           
           prevData = c.previous_data ?? prevData;
           epics = c.epics?.length ? c.epics : [{ id:'', title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }];
+          contributors = c.contributors?.length ? c.contributors : [{ name: '', contribution: '' }];
         }
       } else {
         const c = pres.content as RetroContent;
         if (c) {
           retroFeedback = c.feedback?.length ? c.feedback : [''];
           prevData = c.previous_data ?? prevData;
+          contributors = c.contributors?.length ? c.contributors : [{ name: '', contribution: '' }];
         }
       }
     } catch (e: any) { error = e.message; }
@@ -58,8 +63,8 @@
     saving = true;
     try {
       const content = pres?.type === 'intro'
-        ? { learnings: learnings.filter(l => l.content.trim()), changes: changes.filter(ch => ch.content.trim()), previous_data: prevData, epics } as IntroContent
-        : { previous_data: prevData, feedback: retroFeedback.filter(Boolean) } as RetroContent;
+        ? { learnings: learnings.filter(l => l.content.trim()), changes: changes.filter(ch => ch.content.trim()), previous_data: prevData, epics, contributors: contributors.filter(c => c.name.trim()) } as IntroContent
+        : { previous_data: prevData, feedback: retroFeedback.filter(Boolean), contributors: contributors.filter(c => c.name.trim()) } as RetroContent;
       pres = await api.presentations.update(planID, presID, { title, sprint_name: sprintName, content });
     } catch (e: any) { error = e.message; }
     finally { saving = false; }
@@ -84,6 +89,8 @@
   function removeEpic(i: number) { epics = epics.filter((_,j) => j !== i); }
   function addFeedback() { retroFeedback = [...retroFeedback, '']; }
   function removeFeedback(i: number) { retroFeedback = retroFeedback.filter((_,j) => j !== i); }
+  function addContributor() { contributors = [...contributors, { name: '', contribution: '' }]; }
+  function removeContributor(i: number) { contributors = contributors.filter((_,j) => j !== i); }
 </script>
 
 <svelte:head>
@@ -130,6 +137,29 @@
         <label class="label">Sprint Name</label>
         <input class="input" bind:value={sprintName} placeholder="e.g. Sprint 24 – 25" />
       </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="flex items-center gap-2"><span style="font-size:18px;">👥</span><h2 class="font-semibold">Folks that contributed</h2></div>
+      <button class="btn btn-ghost btn-sm" onclick={addContributor}>+ Add Person</button>
+    </div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:12px;">
+      {#each contributors as c, i (i)}
+        <div class="flex gap-2 items-start">
+          <div class="grow grid-2" style="gap:10px;">
+            <input class="input" bind:value={contributors[i].name} placeholder="Name" />
+            <input class="input" bind:value={contributors[i].contribution} placeholder="Contribution (e.g. Developed API)" />
+          </div>
+          {#if contributors.length > 1}
+            <button class="btn-icon" style="color:var(--c-danger);margin-top:8px;" onclick={() => removeContributor(i)}>✕</button>
+          {/if}
+        </div>
+      {/each}
+      {#if contributors.length === 0 || (contributors.length === 1 && !contributors[0].name)}
+        <p class="text-muted" style="font-size:13px;text-align:center;padding:12px;">Slide will be skipped if no names are provided.</p>
+      {/if}
     </div>
   </div>
 

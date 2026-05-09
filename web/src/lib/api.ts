@@ -130,16 +130,23 @@ export interface Change {
 	tags: string[];
 }
 
+export interface Contributor {
+	name: string;
+	contribution: string;
+}
+
 export interface IntroContent {
 	learnings: Learning[];
 	changes: Change[];
 	previous_data: PreviousData;
 	epics: Epic[];
+	contributors?: Contributor[];
 }
 
 export interface RetroContent {
 	previous_data: PreviousData;
 	feedback: string[];
+	contributors?: Contributor[];
 }
 
 // ─── API calls ────────────────────────────────────────────────────────────────

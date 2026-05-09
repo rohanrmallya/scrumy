@@ -93,18 +93,25 @@ type Change struct {
 	Tags    []string `json:"tags"`
 }
 
+type Contributor struct {
+	Name         string `json:"name"`
+	Contribution string `json:"contribution"`
+}
+
 // IntroContent is the JSON structure for a Scrum Intro presentation
 type IntroContent struct {
 	Learnings    []Learning    `json:"learnings"`
 	Changes      []Change      `json:"changes"`
 	PreviousData PreviousData  `json:"previous_data"`
 	Epics        []Epic        `json:"epics"`
+	Contributors []Contributor `json:"contributors"`
 }
 
 // RetroContent is the JSON structure for a Sprint Retro presentation
 type RetroContent struct {
-	PreviousData PreviousData `json:"previous_data"`
-	Feedback     []string     `json:"feedback"`
+	PreviousData PreviousData  `json:"previous_data"`
+	Feedback     []string      `json:"feedback"`
+	Contributors []Contributor `json:"contributors"`
 }
 
 type PreviousData struct {

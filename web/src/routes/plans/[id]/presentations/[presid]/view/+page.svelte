@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { api, type Presentation, type IntroContent, type RetroContent, type Epic, type PreviousData } from '$lib/api';
+  import { api, type Presentation, type IntroContent, type RetroContent, type Epic, type PreviousData, type Contributor } from '$lib/api';
 
   const planID = $derived($page.params.id);
   const presID = $derived($page.params.presid);
@@ -55,6 +55,10 @@
       const c = pres.content as IntroContent;
       // Title slide
       s.push({ type: 'title', data: { title: pres.title, sprint: pres.sprint_name } });
+      // Contributors slide
+      if (c?.contributors?.length) {
+        s.push({ type: 'contributors', data: { items: c.contributors } });
+      }
       // Metrics from previous sprint
       if (c?.previous_data) s.push({ type: 'metrics', data: c.previous_data });
       // Learnings slide
@@ -76,6 +80,9 @@
     } else {
       const c = pres.content as RetroContent;
       s.push({ type: 'title', data: { title: pres.title, sprint: pres.sprint_name, isRetro: true } });
+      if (c?.contributors?.length) {
+        s.push({ type: 'contributors', data: { items: c.contributors } });
+      }
       if (c?.previous_data) s.push({ type: 'metrics', data: c.previous_data });
       s.push({ type: 'retro-feedback', data: { items: c?.feedback ?? [], presID, planID } });
       s.push({ type: 'closing', data: { sprint: pres.sprint_name, isRetro: true } });
@@ -154,6 +161,42 @@
                   {s.data.sprint}
                 </p>
               {/if}
+            </div>
+
+          {:else if s.type === 'contributors'}
+            <!-- Contributors Slide -->
+            <div style="height:100%; padding:40px 60px; display:flex; flex-direction:column; font-family:'Inter', sans-serif;">
+              <div style="margin-bottom:40px;" class="fade-in-up">
+                <h1 style="font-size:42px; font-weight:800; color:#fff; margin-bottom:8px; letter-spacing:-0.02em;">Folks that Contributed</h1>
+                <p style="font-size:18px; color:rgba(255,255,255,0.5);">Celebrating the team's efforts in {pres?.sprint_name}</p>
+              </div>
+
+              <div style="flex:1; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); grid-auto-rows:max-content; gap:24px; padding:6px;">
+                {#each s.data.items as person, i}
+                  <div class="glass-card fade-in-up" style="padding:24px; display:flex; flex-direction:column; gap:16px; animation-delay: {i * 0.05}s;">
+                    <div style="display:flex; align-items:center; gap:16px;">
+                      <div style="width:50px; height:50px; border-radius:50%; background:linear-gradient(135deg, #818CF8, #C084FC); display:flex; align-items:center; justify-content:center; font-weight:800; color:#fff; font-size:20px; box-shadow:0 4px 12px rgba(129, 140, 248, 0.3);">
+                        {person.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div style="display:flex; flex-direction:column;">
+                        <span style="font-size:22px; font-weight:800; color:#fff;">{person.name}</span>
+                        <span style="font-size:13px; font-weight:700; color:#818CF8; text-transform:uppercase; letter-spacing:0.05em;">Contributor</span>
+                      </div>
+                    </div>
+                    {#if person.contribution}
+                      <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:12px 16px;">
+                        <p style="font-size:15px; color:rgba(255,255,255,0.7); line-height:1.5;">{person.contribution}</p>
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+
+              <!-- Footer -->
+              <div style="border-top:1px solid rgba(255,255,255,0.1); padding-top:20px; display:flex; justify-content:space-between; align-items:center; color:rgba(255,255,255,0.3); font-size:13px; font-weight:600;">
+                <div>{pres?.sprint_name ?? 'Sprint'} • Recognition</div>
+                <div>Keep up the great work!</div>
+              </div>
             </div>
 
           {:else if s.type === 'metrics'}
