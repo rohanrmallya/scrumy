@@ -119,6 +119,7 @@ type PreviousData struct {
 }
 
 type Epic struct {
+	ID          string  `json:"id"`
 	Title       string  `json:"title"`
 	Summary     string  `json:"summary"`
 	WhyNeeded   string  `json:"why_needed"`

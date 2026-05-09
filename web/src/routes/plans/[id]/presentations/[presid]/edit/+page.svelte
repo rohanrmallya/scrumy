@@ -17,7 +17,7 @@
   let learnings = $state<Learning[]>([{ title: '', content: '', tags: [] }]);
   let changes = $state<Change[]>([{ title: '', content: '', tags: [] }]);
   let prevData = $state<PreviousData>({ total_sp_delivered:0, total_hours_logged:0, total_work_logs:0, avg_hours_per_sp:0, planned_sp:0, executed_sp:0, spillovers:0, total_epics_delivered:0 });
-  let epics = $state<Epic[]>([{ title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }]);
+  let epics = $state<Epic[]>([{ id:'', title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }]);
 
   // Retro state
   let retroFeedback = $state<string[]>(['']);
@@ -41,7 +41,7 @@
           if (changes.length === 0) changes = [{ title: '', content: '', tags: [] }];
           
           prevData = c.previous_data ?? prevData;
-          epics = c.epics?.length ? c.epics : [{ title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }];
+          epics = c.epics?.length ? c.epics : [{ id:'', title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }];
         }
       } else {
         const c = pres.content as RetroContent;
@@ -80,7 +80,7 @@
   function removeLearning(i: number) { learnings = learnings.filter((_,j) => j !== i); }
   function addChange() { changes = [...changes, { title: '', content: '', tags: [] }]; }
   function removeChange(i: number) { changes = changes.filter((_,j) => j !== i); }
-  function addEpic() { epics = [...epics, { title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }]; }
+  function addEpic() { epics = [...epics, { id:'', title:'', summary:'', why_needed:'', when_doing:'', audience:'', total_sp:0 }]; }
   function removeEpic(i: number) { epics = epics.filter((_,j) => j !== i); }
   function addFeedback() { retroFeedback = [...retroFeedback, '']; }
   function removeFeedback(i: number) { retroFeedback = retroFeedback.filter((_,j) => j !== i); }
@@ -248,8 +248,17 @@
       <div class="card-body" style="display:flex;flex-direction:column;gap:20px;">
         {#each epics as epic, i (i)}
           <div style="border-left:3px solid var(--c-primary);padding-left:16px;display:flex;flex-direction:column;gap:12px;">
-            <div class="flex justify-between items-center">
-              <input class="input grow" bind:value={epics[i].title} placeholder="Epic Title" style="font-size:15px;font-weight:500;" />
+            <div class="flex gap-3 justify-between items-center">
+              <div class="flex gap-2 grow items-center">
+                <div style="width:100px;">
+                  <label class="label" style="font-size:10px;margin-bottom:0;">Epic ID</label>
+                  <input class="input" bind:value={epics[i].id} placeholder="EPIC-123" style="font-size:13px;font-weight:600;padding:4px 8px;text-transform:uppercase;" />
+                </div>
+                <div class="grow">
+                  <label class="label" style="font-size:10px;margin-bottom:0;">Epic Title</label>
+                  <input class="input grow" bind:value={epics[i].title} placeholder="Epic Title" style="font-size:15px;font-weight:500;" />
+                </div>
+              </div>
               {#if epics.length > 1}<button class="btn-icon" style="color:var(--c-danger);" onclick={() => removeEpic(i)}>🗑</button>{/if}
             </div>
             <div class="form-group">

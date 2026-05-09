@@ -336,43 +336,102 @@
 
         {:else if s.type === 'epic'}
           {@const e = s.data as Epic}
-          <!-- Epic Slide -->
-          <div style="background:#fff;height:100%;padding:40px;display:flex;flex-direction:column;">
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px;">
-              <div style="width:36px;height:36px;background:var(--c-primary);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;">🗂</div>
+          <!-- Redesigned Epic Slide -->
+          <div style="background:#fff; height:100%; display:grid; grid-template-columns: 1fr 340px; font-family:'Inter', sans-serif;">
+            
+            <!-- Left Side: Main Content -->
+            <div style="padding: 60px 80px; overflow-y: auto; display: flex; flex-direction: column; gap: 40px; border-right: 1px solid #F3F4F6;">
+              
+              <!-- Header & Tags -->
               <div>
-                <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--c-text-3);">Epic</p>
-                <h2 style="font-size:clamp(24px,3.5vw,48px);font-weight:700;color:#1A1B2E;">{e.title}</h2>
+                <div style="display: flex; gap: 12px; margin-bottom: 24px;">
+                  {#if e.id}
+                    <span style="background: #FFF7ED; color: #EA580C; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 700; border: 1px solid #FFEDD5; text-transform: uppercase; letter-spacing: 0.05em;">{e.id}</span>
+                  {/if}
+                  <span style="background: #EFF6FF; color: #2563EB; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 700; border: 1px solid #DBEAFE; text-transform: uppercase; letter-spacing: 0.05em;">{pres?.sprint_name?.includes('Q') ? pres.sprint_name.split(' ')[0] : ''} INITIATIVE</span>
+                </div>
+                <h1 style="font-size: 64px; font-weight: 800; color: #111827; line-height: 1.1; letter-spacing: -0.02em;">{e.title}</h1>
+              </div>
+
+              <!-- Summary Section -->
+              <div style="display: flex; flex-direction: column; gap: 16px;">
+                <div style="display: flex; align-items: center; gap: 12px; color: #4F46E5;">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                  <h2 style="font-size: 24px; font-weight: 700;">Summary</h2>
+                </div>
+                <p style="font-size: 20px; color: #4B5563; line-height: 1.6;">{e.summary || 'No summary provided.'}</p>
+              </div>
+
+              <!-- Why We Need It Section -->
+              <div style="display: flex; flex-direction: column; gap: 20px;">
+                <div style="display: flex; align-items: center; gap: 12px; color: #4F46E5;">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+                  <h2 style="font-size: 24px; font-weight: 700;">Why we need it?</h2>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 16px;">
+                  {#each (e.why_needed || '').split('\n').filter(Boolean) as line}
+                    <div style="display: flex; gap: 16px; align-items: flex-start;">
+                      <div style="width: 24px; height: 24px; background: #EEF2FF; border: 1.5px solid #6366F1; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366F1" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                      </div>
+                      <p style="font-size: 18px; color: #374151; line-height: 1.4;">
+                        {#if line.includes(':')}
+                          <strong style="color: #111827;">{line.split(':')[0]}:</strong>{line.split(':').slice(1).join(':')}
+                        {:else}
+                          {line}
+                        {/if}
+                      </p>
+                    </div>
+                  {/each}
+                </div>
               </div>
             </div>
-            {#if e.summary}
-              <p style="font-size:clamp(16px,2vw,24px);color:#4B5563;margin-bottom:20px;line-height:1.6;">{e.summary}</p>
-            {/if}
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;flex:1;">
-              {#if e.why_needed}
-                <div style="background:var(--c-primary-lt);padding:20px;border-radius:12px;">
-                  <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--c-primary);margin-bottom:8px;font-weight:600;">Why we need it?</p>
-                  <p style="font-size:clamp(14px,1.8vw,22px);color:#374151;line-height:1.5;">{e.why_needed}</p>
+
+            <!-- Right Side: Metadata / Sidebar -->
+            <div style="background: #F9FAFB; padding: 60px 40px; display: flex; flex-direction: column; gap: 48px;">
+              
+              <!-- Audience Section -->
+              <div style="display: flex; flex-direction: column; gap: 24px;">
+                <div style="display: flex; align-items: center; gap: 12px; color: #4F46E5;">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                  <h2 style="font-size: 24px; font-weight: 700;">Audience</h2>
                 </div>
-              {/if}
-              {#if e.audience}
-                <div style="background:var(--c-success-lt);padding:20px;border-radius:12px;">
-                  <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--c-success);margin-bottom:8px;font-weight:600;">Who consumes it?</p>
-                  <p style="font-size:clamp(14px,1.8vw,22px);color:#374151;line-height:1.5;">{e.audience}</p>
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                  {#each (e.audience || '').split('\n').filter(Boolean) as aud}
+                    <div style="background: #fff; border: 1px solid #E5E7EB; border-radius: 12px; padding: 16px 20px; display: flex; align-items: center; gap: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                      <div style="width: 40px; height: 40px; background: #EFF6FF; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #3B82F6;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                      </div>
+                      <span style="font-size: 16px; font-weight: 600; color: #1F2937;">{aud}</span>
+                    </div>
+                  {/each}
                 </div>
-              {/if}
-              {#if e.when_doing}
-                <div style="background:var(--c-warning-lt);padding:20px;border-radius:12px;">
-                  <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--c-warning);margin-bottom:8px;font-weight:600;">When?</p>
-                  <p style="font-size:clamp(14px,1.8vw,22px);color:#374151;">{e.when_doing}</p>
+              </div>
+
+              <!-- Timeline Section -->
+              <div style="display: flex; flex-direction: column; gap: 24px;">
+                <div style="display: flex; align-items: center; gap: 12px; color: #4F46E5;">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                  <h2 style="font-size: 24px; font-weight: 700;">Timeline</h2>
                 </div>
-              {/if}
-              {#if e.total_sp}
-                <div style="background:var(--c-purple-lt);padding:20px;border-radius:12px;">
-                  <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--c-purple);margin-bottom:8px;font-weight:600;">Story Points</p>
-                  <p style="font-size:clamp(32px,5vw,72px);font-weight:700;color:var(--c-purple);">{e.total_sp}</p>
+                <div style="background: #fff; border: 1px solid #E5E7EB; border-radius: 12px; padding: 24px; display: flex; gap: 16px; position: relative; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                  <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: #3B82F6;"></div>
+                  <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <span style="font-size: 11px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; letter-spacing: 0.05em;">Target Completion</span>
+                    <div style="display: flex; align-items: baseline; gap: 8px;">
+                      <span style="font-size: 20px; font-weight: 800; color: #3B82F6;">{e.when_doing?.split('–')[0] || 'TBD'}</span>
+                      <span style="color: #9CA3AF;">—</span>
+                      <span style="font-size: 20px; font-weight: 700; color: #1F2937;">{e.when_doing?.split('–')[1] || ''}</span>
+                    </div>
+                    {#if e.total_sp}
+                      <div style="margin-top: 12px; display: flex; align-items: center; gap: 6px; color: #6B7280; font-size: 14px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                        <span>{e.total_sp} Story Points</span>
+                      </div>
+                    {/if}
+                  </div>
                 </div>
-              {/if}
+              </div>
             </div>
           </div>
 

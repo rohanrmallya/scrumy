@@ -109,6 +109,7 @@ export interface PreviousData {
 }
 
 export interface Epic {
+	id: string;
 	title: string;
 	summary: string;
 	why_needed: string;
