@@ -133,18 +133,26 @@
       <div class="slide" style="position:relative;">
         {#if s.type === 'title'}
           <!-- Title Slide -->
-          <div style="background:linear-gradient(135deg,#1A1B2E 0%,#2D3561 100%);height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;padding:60px;text-align:center;">
-            <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.5);margin-bottom:20px;">
-              {s.data.isRetro ? 'Sprint Retrospective' : 'Sprint Introduction'}
+          <div style="height:100%; position:relative; overflow:hidden;">
+            <div class="dynamic-bg">
+              <div class="blob blob-1"></div>
+              <div class="blob blob-2"></div>
+              <div class="blob blob-3"></div>
+              <div class="blob blob-4"></div>
             </div>
-            <h1 style="font-size:clamp(32px,6vw,84px);font-weight:700;line-height:1.2;margin-bottom:16px;">{s.data.title}</h1>
-            {#if s.data.sprint}
-              <p style="font-size:clamp(18px,3vw,32px);color:rgba(255,255,255,0.6);">{s.data.sprint}</p>
-            {/if}
-            <div style="margin-top:40px;display:flex;gap:8px;">
-              {#each slides as _, i}
-                <div style="width:{i === currentSlide ? 24 : 8}px;height:8px;border-radius:4px;background:{i === currentSlide ? 'var(--c-primary)' : 'rgba(255,255,255,0.2)'};transition:all 300ms;"></div>
-              {/each}
+            
+            <div class="slide-content">
+              <div class="glass-tag fade-in-up" style="animation-delay: 0.1s;">
+                {s.data.isRetro ? 'Sprint Retrospective' : 'Sprint Introduction'}
+              </div>
+              <h1 class="fade-in-up" style="font-size:clamp(40px, 8vw, 100px); font-weight:900; line-height:1.1; margin-bottom:20px; letter-spacing:-0.04em; animation-delay: 0.2s; background: linear-gradient(180deg, #FFFFFF 0%, rgba(255,255,255,0.7) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                {s.data.title}
+              </h1>
+              {#if s.data.sprint}
+                <p class="fade-in-up" style="font-size:clamp(20px, 4vw, 36px); color:rgba(255,255,255,0.5); font-weight:500; animation-delay: 0.3s; letter-spacing:-0.02em;">
+                  {s.data.sprint}
+                </p>
+              {/if}
             </div>
           </div>
 
@@ -489,15 +497,33 @@
 
         {:else if s.type === 'closing'}
           <!-- Closing Slide -->
-          <div style="background:linear-gradient(135deg,#1A1B2E 0%,#2D3561 100%);height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;padding:60px;text-align:center;">
-            <div style="font-size:48px;margin-bottom:20px;">{s.data.isRetro ? '🙏' : '🚀'}</div>
-            <h1 style="font-size:clamp(32px,5vw,84px);font-weight:700;margin-bottom:12px;">
-              {s.data.isRetro ? 'Thank You!' : "Let's Ship It!"}
-            </h1>
-            <p style="color:rgba(255,255,255,0.6);font-size:clamp(18px,3vw,32px);">
-              {s.data.sprint}
-            </p>
+          <div style="height:100%; position:relative; overflow:hidden;">
+            <div class="dynamic-bg">
+              <div class="blob blob-1"></div>
+              <div class="blob blob-2" style="animation-delay: -12s;"></div>
+              <div class="blob blob-3" style="animation-delay: -20s;"></div>
+              <div class="blob blob-4" style="animation-delay: -25s;"></div>
+            </div>
+            
+            <div class="slide-content">
+              <div style="font-size:80px; margin-bottom:32px; animation: bounce 2s infinite ease-in-out;">
+                {s.data.isRetro ? '🙏' : '🚀'}
+              </div>
+              <h1 class="fade-in-up" style="font-size:clamp(40px, 8vw, 100px); font-weight:900; margin-bottom:16px; letter-spacing:-0.04em; background: linear-gradient(180deg, #FFFFFF 0%, rgba(255,255,255,0.7) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                {s.data.isRetro ? 'Thank You!' : "Let's Ship It!"}
+              </h1>
+              <p class="fade-in-up" style="color:rgba(255,255,255,0.5); font-size:clamp(20px, 4vw, 36px); font-weight:500; animation-delay: 0.1s;">
+                {s.data.sprint}
+              </p>
+            </div>
           </div>
+
+          <style>
+            @keyframes bounce {
+              0%, 100% { transform: translateY(0); }
+              50% { transform: translateY(-20px); }
+            }
+          </style>
         {/if}
       </div>
     {/if}
@@ -526,4 +552,124 @@
   </div>
 </div>
 {/if}
+
+<style>
+  .dynamic-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    background: #0A0C10;
+    z-index: 0;
+  }
+
+  .blob {
+    position: absolute;
+    width: 60vmax;
+    height: 60vmax;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.35;
+    mix-blend-mode: screen;
+    animation: move 25s infinite alternate ease-in-out;
+  }
+
+  .blob-1 {
+    background: radial-gradient(circle, #4F46E5 0%, transparent 70%);
+    top: -10%;
+    left: -10%;
+    animation: liquid-1 12s infinite alternate ease-in-out;
+  }
+
+  .blob-2 {
+    background: radial-gradient(circle, #7C3AED 0%, transparent 70%);
+    bottom: -10%;
+    right: -10%;
+    animation: liquid-2 15s infinite alternate ease-in-out;
+    animation-delay: -2s;
+  }
+
+  .blob-3 {
+    background: radial-gradient(circle, #DB2777 0%, transparent 70%);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    animation: liquid-3 18s infinite alternate ease-in-out;
+    animation-delay: -4s;
+  }
+
+  .blob-4 {
+    background: radial-gradient(circle, #2563EB 0%, transparent 70%);
+    bottom: 20%;
+    left: 10%;
+    animation: liquid-1 10s infinite alternate-reverse ease-in-out;
+    animation-delay: -6s;
+  }
+
+  @keyframes liquid-1 {
+    0% { transform: translate(0, 0) scale(1) rotate(0deg); }
+    33% { transform: translate(30%, 20%) scale(1.2) rotate(30deg); }
+    66% { transform: translate(-20%, 30%) scale(0.8) rotate(-20deg); }
+    100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  }
+
+  @keyframes liquid-2 {
+    0% { transform: translate(0, 0) scale(1.1) rotate(0deg); }
+    50% { transform: translate(-30%, -25%) scale(1.4) rotate(-40deg); }
+    100% { transform: translate(0, 0) scale(1.1) rotate(0deg); }
+  }
+
+  @keyframes liquid-3 {
+    0% { transform: translate(-50%, -50%) scale(1); }
+    33% { transform: translate(-30%, -70%) scale(1.3) rotate(20deg); }
+    66% { transform: translate(-70%, -30%) scale(0.7) rotate(-20deg); }
+    100% { transform: translate(-50%, -50%) scale(1); }
+  }
+
+  .slide-content {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+    text-align: center;
+    padding: 60px;
+    color: #fff;
+  }
+
+  .fade-in-up {
+    animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    opacity: 0;
+  }
+
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .glass-tag {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 8px 16px;
+    border-radius: 100px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: 24px;
+  }
+</style>
 
