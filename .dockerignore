@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+
+# IDEs
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build Artifacts
+scrumy
+dist/
+web/dist/
+.svelte-kit/
+web/.svelte-kit/
+web/node_modules/
+node_modules/
+
+# Databases
+*.db
+*.db-shm
+*.db-wal
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Agents
+.agents/
+.gemini/
