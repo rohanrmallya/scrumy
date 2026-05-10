@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"scrumy/internal/db"
 	"scrumy/internal/handlers"
 
@@ -101,7 +103,28 @@ func main() {
 	if err != nil {
 		log.Fatalf("could not sub web/dist: %v", err)
 	}
-	r.Get("/*", http.FileServer(http.FS(distFS)).ServeHTTP)
+
+	staticServer := http.FileServer(http.FS(distFS))
+	r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
+		urlPath := r.URL.Path
+		// Check if file exists in the embedded FS
+		f, err := distFS.Open(path.Clean(urlPath))
+		if err == nil {
+			f.Close()
+			staticServer.ServeHTTP(w, r)
+			return
+		}
+		
+		// Fallback to index.html for SPA routing
+		index, err := distFS.Open("index.html")
+		if err != nil {
+			http.Error(w, "index.html not found", http.StatusInternalServerError)
+			return
+		}
+		defer index.Close()
+		stat, _ := index.Stat()
+		http.ServeContent(w, r, "index.html", stat.ModTime(), index.(io.ReadSeeker))
+	})
 
 	addr := fmt.Sprintf(":%s", port)
 	log.Printf("🚀 Scrumy running at http://localhost%s", addr)
