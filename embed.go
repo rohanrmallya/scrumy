@@ -2,5 +2,5 @@ package scrumy
 
 import "embed"
 
-//go:embed web/dist/*
+//go:embed all:web/dist
 var WebFS embed.FS

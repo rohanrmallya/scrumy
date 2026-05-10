@@ -10,11 +10,13 @@ import (
 	"path"
 	"scrumy/internal/db"
 	"scrumy/internal/handlers"
+	"strings"
+
+	"scrumy"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"scrumy"
 )
 
 func main() {
@@ -104,26 +106,40 @@ func main() {
 		log.Fatalf("could not sub web/dist: %v", err)
 	}
 
-	staticServer := http.FileServer(http.FS(distFS))
 	r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
-		urlPath := r.URL.Path
-		// Check if file exists in the embedded FS
-		f, err := distFS.Open(path.Clean(urlPath))
-		if err == nil {
-			f.Close()
-			staticServer.ServeHTTP(w, r)
-			return
+		urlPath := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if urlPath == "" || urlPath == "." {
+			urlPath = "index.html"
 		}
-		
-		// Fallback to index.html for SPA routing
-		index, err := distFS.Open("index.html")
+
+		// Try to open the file
+		f, err := distFS.Open(urlPath)
 		if err != nil {
-			http.Error(w, "index.html not found", http.StatusInternalServerError)
-			return
+			// Fallback to index.html for SPA routing
+			urlPath = "index.html"
+			f, err = distFS.Open(urlPath)
+			if err != nil {
+				http.Error(w, "index.html not found", http.StatusInternalServerError)
+				return
+			}
 		}
-		defer index.Close()
-		stat, _ := index.Stat()
-		http.ServeContent(w, r, "index.html", stat.ModTime(), index.(io.ReadSeeker))
+		defer f.Close()
+
+		stat, _ := f.Stat()
+		if stat.IsDir() {
+			// If it's a directory, serve index.html from inside it
+			urlPath = path.Join(urlPath, "index.html")
+			f2, err := distFS.Open(urlPath)
+			if err != nil {
+				http.Error(w, "index.html not found", http.StatusInternalServerError)
+				return
+			}
+			defer f2.Close()
+			f = f2
+			stat, _ = f.Stat()
+		}
+
+		http.ServeContent(w, r, urlPath, stat.ModTime(), f.(io.ReadSeeker))
 	})
 
 	addr := fmt.Sprintf(":%s", port)
