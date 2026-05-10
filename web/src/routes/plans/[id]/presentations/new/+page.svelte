@@ -13,8 +13,8 @@
   let error = $state('');
 
   // Intro content
-  let learnings = $state<string[]>(['', '']);
-  let changes = $state<string[]>(['']);
+  let learnings = $state<Learning[]>([{ title: '', content: '', tags: [] }, { title: '', content: '', tags: [] }]);
+  let changes = $state<Change[]>([{ title: '', content: '', tags: [] }]);
   let prevData = $state<PreviousData>({
     total_sp_delivered: 0, total_hours_logged: 0, total_work_logs: 0,
     avg_hours_per_sp: 0, planned_sp: 0, executed_sp: 0, spillovers: 0, total_epics_delivered: 0
@@ -26,9 +26,9 @@
   // Retro content
   let retroFeedback = $state<string[]>(['', '']);
 
-  function addLearning() { learnings = [...learnings, '']; }
+  function addLearning() { learnings = [...learnings, { title: '', content: '', tags: [] }]; }
   function removeLearning(i: number) { learnings = learnings.filter((_, idx) => idx !== i); }
-  function addChange() { changes = [...changes, '']; }
+  function addChange() { changes = [...changes, { title: '', content: '', tags: [] }]; }
   function removeChange(i: number) { changes = changes.filter((_, idx) => idx !== i); }
   function addEpic() {
     epics = [...epics, { id: '', title: '', summary: '', why_needed: '', when_doing: '', audience: '', total_sp: 0 }];
@@ -48,8 +48,21 @@
         sprint_name: sprintName.trim()
       });
       const content = type === 'intro'
-        ? { learnings: learnings.filter(Boolean), changes: changes.filter(Boolean), previous_data: prevData, epics } as IntroContent
-        : { previous_data: prevData, feedback: retroFeedback.filter(Boolean) } as RetroContent;
+        ? { 
+            learnings: learnings.filter(l => l.content.trim() || l.title.trim()), 
+            changes: changes.filter(c => c.content.trim() || c.title.trim()), 
+            previous_data: prevData, 
+            epics,
+            contributors: [],
+            closing_text: ""
+          } as IntroContent
+        : { 
+            previous_data: prevData, 
+            feedback: retroFeedback.filter(Boolean),
+            contributors: [],
+            closing_text: ""
+          } as RetroContent;
+      
       await api.presentations.update(planID, pres.id, { 
         title: title.trim(), 
         template_id: templateID,
@@ -176,14 +189,16 @@
           <div class="flex items-center gap-2"><span>💡</span><h2 class="font-semibold">Learnings</h2></div>
           <button class="btn btn-ghost btn-sm" onclick={addLearning}>+ Add Learning</button>
         </div>
-        <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
+        <div class="card-body" style="display:flex;flex-direction:column;gap:16px;">
           {#each learnings as l, i (i)}
-            <div class="flex gap-2 items-center">
-              <span class="text-xs font-semibold text-muted" style="width:18px;text-align:right;">{i+1}</span>
-              <input class="input grow" bind:value={learnings[i]} placeholder="What went well or what did we learn?" />
-              {#if learnings.length > 1}
-                <button class="btn-icon" style="color:var(--c-danger);" onclick={() => removeLearning(i)}>✕</button>
-              {/if}
+            <div style="border-left:3px solid var(--c-purple);padding-left:16px;display:flex;flex-direction:column;gap:10px;position:relative;">
+              <div class="flex justify-between items-center">
+                <input class="input grow" bind:value={learnings[i].title} placeholder="Heading (e.g. Deployment Velocity)" style="font-weight:600;" />
+                {#if learnings.length > 1}
+                  <button class="btn-icon" style="color:var(--c-danger);" onclick={() => removeLearning(i)}>✕</button>
+                {/if}
+              </div>
+              <textarea class="input" bind:value={learnings[i].content} placeholder="What did we learn? (Content)" rows="2"></textarea>
             </div>
           {/each}
         </div>
@@ -194,13 +209,16 @@
           <div class="flex items-center gap-2"><span>🔄</span><h2 class="font-semibold">Changes to this sprint</h2></div>
           <button class="btn btn-ghost btn-sm" onclick={addChange}>+ Add Change</button>
         </div>
-        <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
+        <div class="card-body" style="display:flex;flex-direction:column;gap:16px;">
           {#each changes as c, i (i)}
-            <div class="flex gap-2 items-center">
-              <textarea class="input grow" bind:value={changes[i]} placeholder="Describe process or priority changes…" rows="2"></textarea>
-              {#if changes.length > 1}
-                <button class="btn-icon" style="color:var(--c-danger);" onclick={() => removeChange(i)}>✕</button>
-              {/if}
+            <div style="border-left:3px solid var(--c-success);padding-left:16px;display:flex;flex-direction:column;gap:10px;position:relative;">
+              <div class="flex justify-between items-center">
+                <input class="input grow" bind:value={changes[i].title} placeholder="Heading (e.g. CI/CD Pipeline)" style="font-weight:600;" />
+                {#if changes.length > 1}
+                  <button class="btn-icon" style="color:var(--c-danger);" onclick={() => removeChange(i)}>✕</button>
+                {/if}
+              </div>
+              <textarea class="input" bind:value={changes[i].content} placeholder="Describe the change…" rows="2"></textarea>
             </div>
           {/each}
         </div>
