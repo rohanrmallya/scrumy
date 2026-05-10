@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/bcrypt"
+	"log"
 )
 
 //go:embed schema.sql
@@ -29,10 +30,47 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
 	db := &DB{conn}
+
+	if err := db.Migrate(); err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+
 	if err := db.SeedRootUser(); err != nil {
 		return nil, fmt.Errorf("seed root user: %w", err)
 	}
 	return db, nil
+}
+
+func (db *DB) Migrate() error {
+	// Migration 1: Add template_id to presentations if not exists
+	var hasTemplateID bool
+	rows, err := db.Query("PRAGMA table_info(presentations)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, dtype string
+		var notnull, pk int
+		var dflt any
+		if err := rows.Scan(&cid, &name, &dtype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "template_id" {
+			hasTemplateID = true
+			break
+		}
+	}
+
+	if !hasTemplateID {
+		log.Println("⚡ Migrating: adding template_id to presentations table")
+		_, err = db.Exec("ALTER TABLE presentations ADD COLUMN template_id TEXT NOT NULL DEFAULT 'default'")
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (db *DB) SeedRootUser() error {

@@ -103,6 +103,7 @@ export interface Presentation {
 	id: string;
 	plan_id: string;
 	type: 'intro' | 'retro';
+	template_id: string;
 	title: string;
 	status: 'draft' | 'published';
 	sprint_name: string;
@@ -174,7 +175,7 @@ export const api = {
 		update: (id: string, name: string) => put<Plan>(`/plans/${id}`, { name }),
 		delete: (id: string) => del<{ deleted: boolean }>(`/plans/${id}`),
 		addAdmin: (id: string, username: string) => post<{ added: boolean }>(`/plans/${id}/admins`, { username }),
-		removeAdmin: (id: string, username: string) => del<{ removed: boolean }>(`/plans/${id}/admins`), // Wait, DELETE with body might not work well with fetch. I used DELETE in backend too.
+		removeAdmin: (id: string, username: string) => del<{ removed: boolean }>(`/plans/${id}/admins`, { username }),
 	},
 	capacity: {
 		list: (planID: string) => get<CapacityPlan[]>(`/plans/${planID}/capacity`),
@@ -194,7 +195,7 @@ export const api = {
 	},
 	presentations: {
 		list: (planID: string) => get<Presentation[]>(`/plans/${planID}/presentations`),
-		create: (planID: string, body: { type: string; title: string; sprint_name: string }) => post<Presentation>(`/plans/${planID}/presentations`, body),
+		create: (planID: string, body: { type: string; template_id: string; title: string; sprint_name: string }) => post<Presentation>(`/plans/${planID}/presentations`, body),
 		get: (planID: string, presID: string) => get<Presentation>(`/plans/${planID}/presentations/${presID}`),
 		update: (planID: string, presID: string, body: Partial<Presentation> & { content?: unknown }) => put<Presentation>(`/plans/${planID}/presentations/${presID}`, body),
 		delete: (planID: string, presID: string) => del<{ deleted: boolean }>(`/plans/${planID}/presentations/${presID}`),

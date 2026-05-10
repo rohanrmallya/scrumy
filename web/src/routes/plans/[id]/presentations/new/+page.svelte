@@ -7,6 +7,7 @@
   const type = $derived(($page.url.searchParams.get('type') ?? 'intro') as 'intro' | 'retro');
 
   let title = $state('');
+  let templateID = $state('default');
   let sprintName = $state('');
   let saving = $state(false);
   let error = $state('');
@@ -41,12 +42,20 @@
     saving = true;
     try {
       const pres = await api.presentations.create(planID, {
-        type, title: title.trim(), sprint_name: sprintName.trim()
+        type, 
+        template_id: templateID,
+        title: title.trim(), 
+        sprint_name: sprintName.trim()
       });
       const content = type === 'intro'
         ? { learnings: learnings.filter(Boolean), changes: changes.filter(Boolean), previous_data: prevData, epics } as IntroContent
         : { previous_data: prevData, feedback: retroFeedback.filter(Boolean) } as RetroContent;
-      await api.presentations.update(planID, pres.id, { title: title.trim(), sprint_name: sprintName.trim(), content });
+      await api.presentations.update(planID, pres.id, { 
+        title: title.trim(), 
+        template_id: templateID,
+        sprint_name: sprintName.trim(), 
+        content 
+      });
       goto(`/plans/${planID}/presentations/${pres.id}/edit`);
     } catch (e: any) {
       error = e.message;
@@ -86,12 +95,19 @@
     <p class="text-sm text-muted" style="margin-top:4px;">Enter the raw data required for the presentation. Styling and slide layouts will be applied automatically.</p>
   </div>
 
-  <!-- Title + Sprint -->
+  <!-- Title + Template + Sprint -->
   <div class="card">
-    <div class="card-body grid-2">
+    <div class="card-body grid-3">
       <div class="form-group">
         <label class="label" for="pres-title">Presentation Title</label>
         <input id="pres-title" class="input" bind:value={title} placeholder="e.g. Sprint 24 Intro" />
+      </div>
+      <div class="form-group">
+        <label class="label" for="pres-template">Template</label>
+        <select id="pres-template" class="input" bind:value={templateID}>
+          <option value="default">Default (Dark/Modern)</option>
+          <option value="minimalist">Minimalist (Light/Simple)</option>
+        </select>
       </div>
       <div class="form-group">
         <label class="label" for="sprint-name">Sprint Name</label>

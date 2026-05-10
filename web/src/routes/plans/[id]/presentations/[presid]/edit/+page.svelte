@@ -27,12 +27,14 @@
   let retroFeedback = $state<string[]>(['']);
 
   let title = $state('');
+  let templateID = $state('default');
   let sprintName = $state('');
 
   onMount(async () => {
     try {
       pres = await api.presentations.get(planID, presID);
       title = pres.title;
+      templateID = pres.template_id || 'default';
       sprintName = pres.sprint_name;
       if (pres.type === 'intro') {
         const c = pres.content as IntroContent;
@@ -68,7 +70,12 @@
       const content = pres?.type === 'intro'
         ? { learnings: learnings.filter(l => l.content.trim()), changes: changes.filter(ch => ch.content.trim()), previous_data: prevData, epics, contributors: contributors.filter(c => c.name.trim()), closing_text: closingText } as IntroContent
         : { previous_data: prevData, feedback: retroFeedback.filter(Boolean), contributors: contributors.filter(c => c.name.trim()), closing_text: closingText } as RetroContent;
-      pres = await api.presentations.update(planID, presID, { title, sprint_name: sprintName, content });
+      pres = await api.presentations.update(planID, presID, { 
+        title, 
+        template_id: templateID,
+        sprint_name: sprintName, 
+        content 
+      });
     } catch (e: any) { error = e.message; }
     finally { saving = false; }
   }
@@ -131,10 +138,17 @@
 <div style="max-width:900px;margin:0 auto;padding:24px 24px 80px;display:flex;flex-direction:column;gap:20px;">
 
   <div class="card">
-    <div class="card-body grid-2">
+    <div class="card-body grid-3">
       <div class="form-group">
         <label class="label">Presentation Title</label>
         <input class="input" bind:value={title} placeholder="e.g. Sprint 24 Intro" />
+      </div>
+      <div class="form-group">
+        <label class="label">Template</label>
+        <select class="input" bind:value={templateID}>
+          <option value="default">Default (Dark/Modern)</option>
+          <option value="minimalist">Minimalist (Light/Simple)</option>
+        </select>
       </div>
       <div class="form-group">
         <label class="label">Sprint Name</label>
