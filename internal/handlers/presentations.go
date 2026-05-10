@@ -34,7 +34,7 @@ func (h *PresentationsHandler) getPlanID(presID string) string {
 func (h *PresentationsHandler) List(w http.ResponseWriter, r *http.Request) {
 	planID := chi.URLParam(r, "planID")
 	rows, err := h.DB.Query(`
-		SELECT id, plan_id, type, title, status, sprint_name, created_at, updated_at
+		SELECT id, plan_id, type, template_id, title, status, sprint_name, created_at, updated_at
 		FROM presentations WHERE plan_id=? ORDER BY created_at DESC
 	`, planID)
 	if err != nil {
@@ -66,6 +66,7 @@ func (h *PresentationsHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	var body struct {
 		Type       string `json:"type"`
+		TemplateID string `json:"template_id"`
 		Title      string `json:"title"`
 		SprintName string `json:"sprint_name"`
 	}
@@ -73,13 +74,16 @@ func (h *PresentationsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		respondErr(w, 400, "type is required (intro|retro)")
 		return
 	}
+	if body.TemplateID == "" {
+		body.TemplateID = "default"
+	}
 	if body.Title == "" {
 		body.Title = "Untitled Presentation"
 	}
 	id := uuid.NewString()
 	_, err := h.DB.Exec(`
-		INSERT INTO presentations (id, plan_id, type, title, sprint_name) VALUES (?, ?, ?, ?, ?)
-	`, id, planID, body.Type, body.Title, body.SprintName)
+		INSERT INTO presentations (id, plan_id, type, template_id, title, sprint_name) VALUES (?, ?, ?, ?, ?, ?)
+	`, id, planID, body.Type, body.TemplateID, body.Title, body.SprintName)
 	if err != nil {
 		respondErr(w, 500, err.Error())
 		return
@@ -104,6 +108,7 @@ func (h *PresentationsHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	var body struct {
 		Title      string `json:"title"`
+		TemplateID string `json:"template_id"`
 		SprintName string `json:"sprint_name"`
 		Content    any    `json:"content"`
 	}
@@ -112,8 +117,15 @@ func (h *PresentationsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	contentJSON, _ := json.Marshal(body.Content)
-	h.DB.Exec(`UPDATE presentations SET title=?, sprint_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-		body.Title, body.SprintName, id)
+
+	if body.TemplateID != "" {
+		h.DB.Exec(`UPDATE presentations SET title=?, template_id=?, sprint_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+			body.Title, body.TemplateID, body.SprintName, id)
+	} else {
+		h.DB.Exec(`UPDATE presentations SET title=?, sprint_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+			body.Title, body.SprintName, id)
+	}
+
 	h.DB.Exec(`
 		INSERT INTO presentation_data (id, presentation_id, content, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(presentation_id) DO UPDATE SET content=excluded.content, updated_at=CURRENT_TIMESTAMP
@@ -169,9 +181,7 @@ func (h *PresentationsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // AddRetroFeedback adds a learning/feedback item to a retro presentation live
 func (h *PresentationsHandler) AddRetroFeedback(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "presID")
-	// Publicly accessible? Requirement says "All plans are public view and does not require signing up or logging in."
-	// Feedback addition is usually public for retro presentations.
-	
+
 	var body struct {
 		Item string `json:"item"`
 	}
@@ -195,7 +205,7 @@ func (h *PresentationsHandler) AddRetroFeedback(w http.ResponseWriter, r *http.R
 }
 
 func (h *PresentationsHandler) getByID(w http.ResponseWriter, r *http.Request, id string) {
-	row := h.DB.QueryRow(`SELECT id, plan_id, type, title, status, sprint_name, created_at, updated_at FROM presentations WHERE id=?`, id)
+	row := h.DB.QueryRow(`SELECT id, plan_id, type, template_id, title, status, sprint_name, created_at, updated_at FROM presentations WHERE id=?`, id)
 	p, err := scanPres(row)
 	if err == sql.ErrNoRows {
 		respondErr(w, 404, "not found")
@@ -223,7 +233,7 @@ type presScanner interface {
 func scanPres(row presScanner) (models.Presentation, error) {
 	var p models.Presentation
 	var createdAt, updatedAt string
-	err := row.Scan(&p.ID, &p.PlanID, &p.Type, &p.Title, &p.Status, &p.SprintName, &createdAt, &updatedAt)
+	err := row.Scan(&p.ID, &p.PlanID, &p.Type, &p.TemplateID, &p.Title, &p.Status, &p.SprintName, &createdAt, &updatedAt)
 	if err != nil {
 		return p, err
 	}

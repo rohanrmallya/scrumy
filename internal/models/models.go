@@ -91,6 +91,7 @@ type Presentation struct {
 	ID         string    `json:"id"`
 	PlanID     string    `json:"plan_id"`
 	Type       string    `json:"type"` // intro | retro
+	TemplateID string    `json:"template_id"` // default | minimalist
 	Title      string    `json:"title"`
 	Status     string    `json:"status"` // draft | published
 	SprintName string    `json:"sprint_name"`

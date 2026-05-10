@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS presentations (
     id          TEXT PRIMARY KEY,
     plan_id     TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
     type        TEXT NOT NULL, -- intro | retro
+    template_id TEXT NOT NULL DEFAULT 'default', -- default | minimalist
     title       TEXT NOT NULL,
     status      TEXT NOT NULL DEFAULT 'draft', -- draft | published
     sprint_name TEXT NOT NULL DEFAULT '',
