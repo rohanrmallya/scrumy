@@ -10,6 +10,23 @@ type Plan struct {
 	// Aggregated counts for UI
 	CapacityPlanCount   int `json:"capacity_plan_count,omitempty"`
 	PresentationCount   int `json:"presentation_count,omitempty"`
+	Admins              []string `json:"admins,omitempty"` // List of user IDs who are admins
+	IsAdmin             bool     `json:"is_admin,omitempty"` // Whether the current requester is an admin
+}
+
+type User struct {
+	ID           string    `json:"id"`
+	Username     string    `json:"username"`
+	PasswordHash string    `json:"-"`
+	Role         string    `json:"role"` // admin | user
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type Session struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type CapacityPlan struct {

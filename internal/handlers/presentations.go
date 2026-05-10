@@ -13,7 +13,22 @@ import (
 )
 
 type PresentationsHandler struct {
-	DB *db.DB
+	DB   *db.DB
+	Auth *AuthHandler
+}
+
+func (h *PresentationsHandler) checkAdmin(r *http.Request, planID string) bool {
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil {
+		return false
+	}
+	return h.Auth.IsPlanAdmin(user.ID, planID)
+}
+
+func (h *PresentationsHandler) getPlanID(presID string) string {
+	var planID string
+	h.DB.QueryRow("SELECT plan_id FROM presentations WHERE id = ?", presID).Scan(&planID)
+	return planID
 }
 
 func (h *PresentationsHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +59,11 @@ func (h *PresentationsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *PresentationsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	planID := chi.URLParam(r, "planID")
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	var body struct {
 		Type       string `json:"type"`
 		Title      string `json:"title"`
@@ -76,6 +96,12 @@ func (h *PresentationsHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 func (h *PresentationsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "presID")
+	planID := h.getPlanID(id)
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	var body struct {
 		Title      string `json:"title"`
 		SprintName string `json:"sprint_name"`
@@ -97,18 +123,36 @@ func (h *PresentationsHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 func (h *PresentationsHandler) Publish(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "presID")
+	planID := h.getPlanID(id)
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	h.DB.Exec(`UPDATE presentations SET status='published', updated_at=CURRENT_TIMESTAMP WHERE id=?`, id)
 	h.getByID(w, r, id)
 }
 
 func (h *PresentationsHandler) Unpublish(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "presID")
+	planID := h.getPlanID(id)
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	h.DB.Exec(`UPDATE presentations SET status='draft', updated_at=CURRENT_TIMESTAMP WHERE id=?`, id)
 	h.getByID(w, r, id)
 }
 
 func (h *PresentationsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "presID")
+	planID := h.getPlanID(id)
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	res, err := h.DB.Exec(`DELETE FROM presentations WHERE id=?`, id)
 	if err != nil {
 		respondErr(w, 500, err.Error())
@@ -125,6 +169,9 @@ func (h *PresentationsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // AddRetroFeedback adds a learning/feedback item to a retro presentation live
 func (h *PresentationsHandler) AddRetroFeedback(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "presID")
+	// Publicly accessible? Requirement says "All plans are public view and does not require signing up or logging in."
+	// Feedback addition is usually public for retro presentations.
+	
 	var body struct {
 		Item string `json:"item"`
 	}

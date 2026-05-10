@@ -16,9 +16,21 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 const get = <T>(path: string) => req<T>('GET', path);
 const post = <T>(path: string, body?: unknown) => req<T>('POST', path, body);
 const put = <T>(path: string, body?: unknown) => req<T>('PUT', path, body);
-const del = <T>(path: string) => req<T>('DELETE', path);
+const del = <T>(path: string, body?: unknown) => req<T>('DELETE', path, body);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+export interface User {
+	id: string;
+	username: string;
+	role: string;
+	created_at: string;
+}
+
+export interface AuthRequest {
+	username: string;
+	password?: string;
+}
+
 export interface Plan {
 	id: string;
 	name: string;
@@ -26,6 +38,8 @@ export interface Plan {
 	updated_at: string;
 	capacity_plan_count: number;
 	presentation_count: number;
+	admins?: string[];
+	is_admin?: boolean;
 }
 
 export interface CapacityPlan {
@@ -159,6 +173,8 @@ export const api = {
 		get: (id: string) => get<Plan>(`/plans/${id}`),
 		update: (id: string, name: string) => put<Plan>(`/plans/${id}`, { name }),
 		delete: (id: string) => del<{ deleted: boolean }>(`/plans/${id}`),
+		addAdmin: (id: string, username: string) => post<{ added: boolean }>(`/plans/${id}/admins`, { username }),
+		removeAdmin: (id: string, username: string) => del<{ removed: boolean }>(`/plans/${id}/admins`), // Wait, DELETE with body might not work well with fetch. I used DELETE in backend too.
 	},
 	capacity: {
 		list: (planID: string) => get<CapacityPlan[]>(`/plans/${planID}/capacity`),
@@ -185,5 +201,11 @@ export const api = {
 		publish: (planID: string, presID: string) => post<Presentation>(`/plans/${planID}/presentations/${presID}/publish`),
 		unpublish: (planID: string, presID: string) => post<Presentation>(`/plans/${planID}/presentations/${presID}/unpublish`),
 		addFeedback: (planID: string, presID: string, item: string) => post<Presentation>(`/plans/${planID}/presentations/${presID}/feedback`, { item }),
+	},
+	auth: {
+		login: (body: AuthRequest) => post<User>('/auth/login', body),
+		register: (body: AuthRequest) => post<{ id: string }>('/auth/register', body),
+		logout: () => post<{ message: string }>('/auth/logout'),
+		me: () => get<User>('/auth/me'),
 	},
 };

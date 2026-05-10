@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { api, type Plan } from '$lib/api';
+  import { user } from '$lib/auth';
 
   let plans = $state<Plan[]>([]);
   let loading = $state(true);
@@ -56,8 +57,8 @@
 
 <div class="page-content fade-in">
   <div style="text-align:center; margin-bottom:40px;">
-    <h1 class="text-2xl font-bold" style="margin-bottom:8px;">Your Agile Plans</h1>
-    <p class="text-muted">Select an existing plan or start a new one to begin planning your capacity.</p>
+    <h1 class="text-2xl font-bold" style="margin-bottom:8px;">Agile Plans</h1>
+    <p class="text-muted">Browse public plans or sign in to create and manage your own.</p>
   </div>
 
   {#if error}
@@ -67,40 +68,42 @@
   {/if}
 
   <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:16px;">
-    <!-- Create New Card -->
-    <div
-      class="card"
-      style="border-style: dashed; border-width:2px; cursor:pointer; transition:all 200ms ease; min-height:160px; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px;"
-      onclick={() => showCreate = true}
-      role="button" tabindex="0"
-      onkeydown={(e) => e.key === 'Enter' && (showCreate = true)}
-    >
-      {#if showCreate}
-        <div style="padding:20px; width:100%; display:flex; flex-direction:column; gap:10px;"
-             onclick={(e) => e.stopPropagation()} role="none">
-          <span class="font-semibold" style="font-size:14px;">New Plan Name</span>
-          <input
-            class="input"
-            bind:value={newPlanName}
-            placeholder="e.g. Q3 Phoenix Release"
-            onkeydown={onKeydown}
-            autofocus
-          />
-          <div class="flex gap-2" style="justify-content:flex-end;">
-            <button class="btn btn-secondary btn-sm" onclick={() => { showCreate = false; newPlanName = ''; }}>Cancel</button>
-            <button class="btn btn-primary btn-sm" onclick={createPlan} disabled={creating || !newPlanName.trim()}>
-              {creating ? 'Creating…' : 'Create Plan'}
-            </button>
+    <!-- Create New Card (only if logged in) -->
+    {#if $user}
+      <div
+        class="card"
+        style="border-style: dashed; border-width:2px; cursor:pointer; transition:all 200ms ease; min-height:160px; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px;"
+        onclick={() => showCreate = true}
+        role="button" tabindex="0"
+        onkeydown={(e) => e.key === 'Enter' && (showCreate = true)}
+      >
+        {#if showCreate}
+          <div style="padding:20px; width:100%; display:flex; flex-direction:column; gap:10px;"
+               onclick={(e) => e.stopPropagation()} role="none">
+            <span class="font-semibold" style="font-size:14px;">New Plan Name</span>
+            <input
+              class="input"
+              bind:value={newPlanName}
+              placeholder="e.g. Q3 Phoenix Release"
+              onkeydown={onKeydown}
+              autofocus
+            />
+            <div class="flex gap-2" style="justify-content:flex-end;">
+              <button class="btn btn-secondary btn-sm" onclick={() => { showCreate = false; newPlanName = ''; }}>Cancel</button>
+              <button class="btn btn-primary btn-sm" onclick={createPlan} disabled={creating || !newPlanName.trim()}>
+                {creating ? 'Creating…' : 'Create Plan'}
+              </button>
+            </div>
           </div>
-        </div>
-      {:else}
-        <div style="width:48px;height:48px;background:var(--c-primary-lt);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--c-primary);">+</div>
-        <div style="text-align:center;">
-          <p class="font-semibold">Create New Plan</p>
-          <p class="text-sm text-muted" style="margin-top:4px;">Start a new agile plan</p>
-        </div>
-      {/if}
-    </div>
+        {:else}
+          <div style="width:48px;height:48px;background:var(--c-primary-lt);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--c-primary);">+</div>
+          <div style="text-align:center;">
+            <p class="font-semibold">Create New Plan</p>
+            <p class="text-sm text-muted" style="margin-top:4px;">Start a new agile plan</p>
+          </div>
+        {/if}
+      </div>
+    {/if}
 
     {#if loading}
       {#each [1,2,3] as _}
@@ -117,12 +120,15 @@
         <a
           href="/plans/{plan.id}"
           class="card"
-          style="display:block; text-decoration:none; cursor:pointer; transition:all 200ms ease; min-height:160px;"
+          style="display:block; text-decoration:none; cursor:pointer; transition:all 200ms ease; min-height:160px; position:relative;"
           onmouseover={e => (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'}
           onmouseout={e => (e.currentTarget as HTMLElement).style.transform = ''}
           onfocus={e => (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'}
           onblur={e => (e.currentTarget as HTMLElement).style.transform = ''}
         >
+          {#if plan.is_admin}
+            <div class="admin-badge">Owner</div>
+          {/if}
           <div class="card-body" style="display:flex;flex-direction:column;gap:12px;height:100%;">
             <div style="width:42px;height:42px;background:var(--c-surface-2);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;">
               {planIcon(plan.id)}
@@ -145,5 +151,18 @@
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
+  }
+  .admin-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-size: 10px;
+    text-transform: uppercase;
+    font-weight: bold;
+    background: var(--c-primary-lt);
+    color: var(--c-primary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
   }
 </style>

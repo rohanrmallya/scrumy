@@ -14,7 +14,22 @@ import (
 )
 
 type CapacityHandler struct {
-	DB *db.DB
+	DB   *db.DB
+	Auth *AuthHandler
+}
+
+func (h *CapacityHandler) checkAdmin(r *http.Request, planID string) bool {
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil {
+		return false
+	}
+	return h.Auth.IsPlanAdmin(user.ID, planID)
+}
+
+func (h *CapacityHandler) getPlanID(cpID string) string {
+	var planID string
+	h.DB.QueryRow("SELECT plan_id FROM capacity_plans WHERE id = ?", cpID).Scan(&planID)
+	return planID
 }
 
 // ─── Capacity Plans ───────────────────────────────────────────────────────────
@@ -47,6 +62,11 @@ func (h *CapacityHandler) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) Create(w http.ResponseWriter, r *http.Request) {
 	planID := chi.URLParam(r, "planID")
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	var body struct {
 		Name            string  `json:"name"`
 		HoursPerSP      float64 `json:"hours_per_sp"`
@@ -102,6 +122,12 @@ func (h *CapacityHandler) getByID(w http.ResponseWriter, r *http.Request, id str
 
 func (h *CapacityHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "cpID")
+	planID := h.getPlanID(id)
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	var body struct {
 		Name            string  `json:"name"`
 		Status          string  `json:"status"`
@@ -126,6 +152,12 @@ func (h *CapacityHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "cpID")
+	planID := h.getPlanID(id)
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	res, err := h.DB.Exec(`DELETE FROM capacity_plans WHERE id=?`, id)
 	if err != nil {
 		respondErr(w, 500, err.Error())
@@ -158,6 +190,12 @@ func (h *CapacityHandler) Summary(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	cpID := chi.URLParam(r, "cpID")
+	planID := h.getPlanID(cpID)
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	var body struct {
 		Name           string  `json:"name"`
 		Role           string  `json:"role"`
@@ -184,6 +222,12 @@ func (h *CapacityHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 	cpID := chi.URLParam(r, "cpID")
+	planID := h.getPlanID(cpID)
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	mID := chi.URLParam(r, "memberID")
 	var body struct {
 		Name           string  `json:"name"`
@@ -205,6 +249,12 @@ func (h *CapacityHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) DeleteMember(w http.ResponseWriter, r *http.Request) {
 	cpID := chi.URLParam(r, "cpID")
+	planID := h.getPlanID(cpID)
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	mID := chi.URLParam(r, "memberID")
 	h.DB.Exec(`DELETE FROM team_members WHERE id=? AND capacity_plan_id=?`, mID, cpID)
 	h.getByID(w, r, cpID)
@@ -214,6 +264,12 @@ func (h *CapacityHandler) DeleteMember(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) AddSprint(w http.ResponseWriter, r *http.Request) {
 	cpID := chi.URLParam(r, "cpID")
+	planID := h.getPlanID(cpID)
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	var body struct {
 		Name      string `json:"name"`
 		StartDate string `json:"start_date"`
@@ -243,6 +299,12 @@ func (h *CapacityHandler) AddSprint(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) UpdateSprint(w http.ResponseWriter, r *http.Request) {
 	cpID := chi.URLParam(r, "cpID")
+	planID := h.getPlanID(cpID)
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	sID := chi.URLParam(r, "sprintID")
 	var body struct {
 		Name      string `json:"name"`
@@ -260,6 +322,12 @@ func (h *CapacityHandler) UpdateSprint(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) DeleteSprint(w http.ResponseWriter, r *http.Request) {
 	cpID := chi.URLParam(r, "cpID")
+	planID := h.getPlanID(cpID)
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	sID := chi.URLParam(r, "sprintID")
 	h.DB.Exec(`DELETE FROM sprints WHERE id=? AND capacity_plan_id=?`, sID, cpID)
 	h.getByID(w, r, cpID)
@@ -267,6 +335,12 @@ func (h *CapacityHandler) DeleteSprint(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) UpsertLeave(w http.ResponseWriter, r *http.Request) {
 	cpID := chi.URLParam(r, "cpID")
+	planID := h.getPlanID(cpID)
+	if !h.checkAdmin(r, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	sID := chi.URLParam(r, "sprintID")
 	var body struct {
 		MemberID string  `json:"member_id"`

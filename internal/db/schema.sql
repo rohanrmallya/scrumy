@@ -64,6 +64,27 @@ CREATE TABLE IF NOT EXISTS presentation_data (
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'user', -- admin | user
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS plan_admins (
+    plan_id TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (plan_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_capacity_plans_plan_id ON capacity_plans(plan_id);
 CREATE INDEX IF NOT EXISTS idx_team_members_capacity_plan_id ON team_members(capacity_plan_id);
 CREATE INDEX IF NOT EXISTS idx_sprints_capacity_plan_id ON sprints(capacity_plan_id);

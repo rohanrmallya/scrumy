@@ -12,6 +12,9 @@
   let loading = $state(true);
   let error = $state('');
 
+  let newAdminUsername = $state('');
+  let addingAdmin = $state(false);
+
   onMount(async () => {
     try {
       [plan, capacityPlans, presentations] = await Promise.all([
@@ -35,11 +38,6 @@
     return 'badge-warning';
   }
 
-  function presBadge(s: string) {
-    if (s === 'published') return 'badge-success';
-    return 'badge-warning';
-  }
-
   async function deleteCapacity(cpID: string) {
     if (!confirm('Delete this capacity plan?')) return;
     await api.capacity.delete(planID, cpID);
@@ -52,6 +50,47 @@
     await api.presentations.delete(planID, presID);
     presentations = await api.presentations.list(planID);
     plan = await api.plans.get(planID);
+  }
+
+  async function addAdmin() {
+    if (!newAdminUsername.trim()) return;
+    addingAdmin = true;
+    try {
+      await api.plans.addAdmin(planID, newAdminUsername.trim());
+      newAdminUsername = '';
+      plan = await api.plans.get(planID);
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      addingAdmin = false;
+    }
+  }
+
+  async function removeAdmin(username: string) {
+    if (!confirm(`Remove ${username} as admin?`)) return;
+    try {
+      // Note: Need to implement removeAdmin in api.ts correctly
+      // For now I'll just use a direct fetch if I missed it
+      const res = await fetch(`/api/plans/${planID}/admins`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      plan = await api.plans.get(planID);
+    } catch (e: any) {
+      alert(e.message);
+    }
+  }
+
+  async function deletePlan() {
+    if (!confirm('PERMANENTLY DELETE THIS ENTIRE PLAN AND ALL ITS DATA?')) return;
+    try {
+      await api.plans.delete(planID);
+      goto('/');
+    } catch (e: any) {
+      alert(e.message);
+    }
   }
 
   function formatRelDate(iso: string) {
@@ -88,6 +127,9 @@
         <h1 class="text-2xl font-bold">{plan?.name}</h1>
         <p class="text-sm text-muted" style="margin-top:2px;">Plan Workspace</p>
       </div>
+      {#if plan?.is_admin}
+        <button class="btn btn-outline-danger btn-sm" onclick={deletePlan}>Delete Plan</button>
+      {/if}
     </div>
 
     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start;">
@@ -98,14 +140,18 @@
             <span style="font-size:18px;">📊</span>
             <h2 class="font-semibold" style="font-size:16px;">Capacity Plans</h2>
           </div>
-          <a href="/plans/{planID}/capacity/new" class="btn btn-primary btn-sm">+ Create New</a>
+          {#if plan?.is_admin}
+            <a href="/plans/{planID}/capacity/new" class="btn btn-primary btn-sm">+ Create New</a>
+          {/if}
         </div>
 
         <div>
           {#if capacityPlans.length === 0}
             <div class="empty-state">
               <p>No capacity plans yet.</p>
-              <a href="/plans/{planID}/capacity/new" class="btn btn-primary btn-sm" style="margin-top:12px;">Create First Plan</a>
+              {#if plan?.is_admin}
+                <a href="/plans/{planID}/capacity/new" class="btn btn-primary btn-sm" style="margin-top:12px;">Create First Plan</a>
+              {/if}
             </div>
           {:else}
             {#each capacityPlans as cp (cp.id)}
@@ -121,12 +167,14 @@
                   <span class="font-semibold" style="font-size:14px;">{cp.name}</span>
                   <div class="flex items-center gap-2">
                     <span class="badge {statusBadge(cp.status)}">{cp.status}</span>
-                    <button
-                      class="btn-icon"
-                      style="color:var(--c-danger); font-size:14px;"
-                      onclick={(e) => { e.stopPropagation(); deleteCapacity(cp.id); }}
-                      title="Delete"
-                    >✕</button>
+                    {#if plan?.is_admin}
+                      <button
+                        class="btn-icon"
+                        style="color:var(--c-danger); font-size:14px;"
+                        onclick={(e) => { e.preventDefault(); e.stopPropagation(); deleteCapacity(cp.id); }}
+                        title="Delete"
+                      >✕</button>
+                    {/if}
                   </div>
                 </div>
                 <p class="text-xs text-muted">Updated {formatRelDate(cp.updated_at)}</p>
@@ -143,10 +191,12 @@
             <span style="font-size:18px;">🎤</span>
             <h2 class="font-semibold" style="font-size:16px;">Presentations</h2>
           </div>
-          <div class="flex gap-2">
-            <a href="/plans/{planID}/presentations/new?type=intro" class="btn btn-secondary btn-sm">+ Intro</a>
-            <a href="/plans/{planID}/presentations/new?type=retro" class="btn btn-secondary btn-sm">+ Retro</a>
-          </div>
+          {#if plan?.is_admin}
+            <div class="flex gap-2">
+              <a href="/plans/{planID}/presentations/new?type=intro" class="btn btn-secondary btn-sm">+ Intro</a>
+              <a href="/plans/{planID}/presentations/new?type=retro" class="btn btn-secondary btn-sm">+ Retro</a>
+            </div>
+          {/if}
         </div>
 
         <div class="card-body" style="display:flex;flex-direction:column;gap:20px;padding-top:16px;">
@@ -172,8 +222,10 @@
                       </div>
                     </div>
                     <div class="flex gap-1">
-                      <a href="/plans/{planID}/presentations/{pres.id}/edit" class="btn-icon" title="Edit" style="font-size:14px;">✎</a>
-                      <button class="btn-icon" style="color:var(--c-danger);font-size:14px;" onclick={() => deletePres(pres.id)} title="Delete">✕</button>
+                      {#if plan?.is_admin}
+                        <a href="/plans/{planID}/presentations/{pres.id}/edit" class="btn-icon" title="Edit" style="font-size:14px;">✎</a>
+                        <button class="btn-icon" style="color:var(--c-danger);font-size:14px;" onclick={() => deletePres(pres.id)} title="Delete">✕</button>
+                      {/if}
                     </div>
                   </div>
                 {/each}
@@ -205,8 +257,10 @@
                       </div>
                     </div>
                     <div class="flex gap-1">
-                      <a href="/plans/{planID}/presentations/{pres.id}/edit" class="btn-icon" title="Edit" style="font-size:14px;">✎</a>
-                      <button class="btn-icon" style="color:var(--c-danger);font-size:14px;" onclick={() => deletePres(pres.id)} title="Delete">✕</button>
+                      {#if plan?.is_admin}
+                        <a href="/plans/{planID}/presentations/{pres.id}/edit" class="btn-icon" title="Edit" style="font-size:14px;">✎</a>
+                        <button class="btn-icon" style="color:var(--c-danger);font-size:14px;" onclick={() => deletePres(pres.id)} title="Delete">✕</button>
+                      {/if}
                     </div>
                   </div>
                 {/each}
@@ -215,6 +269,40 @@
           </div>
         </div>
       </div>
+
+      <!-- Admins Management -->
+      {#if plan?.is_admin}
+        <div class="card" style="grid-column: 1 / -1;">
+          <div class="card-header">
+            <h2 class="font-semibold">Manage Admins</h2>
+          </div>
+          <div class="card-body">
+            <div class="flex gap-2" style="margin-bottom:16px;">
+              <input class="input" bind:value={newAdminUsername} placeholder="Username" style="max-width:200px;" />
+              <button class="btn btn-primary btn-sm" onclick={addAdmin} disabled={addingAdmin}>Add Admin</button>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              {#each plan.admins || [] as admin}
+                <div class="badge badge-default flex items-center gap-2" style="padding:6px 10px;">
+                  {admin}
+                  <button class="btn-icon" style="font-size:12px;" onclick={() => removeAdmin(admin)}>✕</button>
+                </div>
+              {/each}
+            </div>
+          </div>
+        </div>
+      {/if}
     </div>
   {/if}
 </div>
+
+<style>
+  .btn-outline-danger {
+    background: transparent;
+    border: 1px solid var(--c-danger);
+    color: var(--c-danger);
+  }
+  .btn-outline-danger:hover {
+    background: var(--c-danger-lt);
+  }
+</style>

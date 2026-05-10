@@ -43,17 +43,28 @@ func main() {
 	}))
 
 	// ── API routes ───────────────────────────────────────────────────────────
-	plansH := &handlers.PlansHandler{DB: database}
-	capacityH := &handlers.CapacityHandler{DB: database}
-	presH := &handlers.PresentationsHandler{DB: database}
+	authH := &handlers.AuthHandler{DB: database}
+	plansH := &handlers.PlansHandler{DB: database, Auth: authH}
+	capacityH := &handlers.CapacityHandler{DB: database, Auth: authH}
+	presH := &handlers.PresentationsHandler{DB: database, Auth: authH}
 
 	r.Route("/api", func(r chi.Router) {
+		r.Use(authH.Middleware)
+
+		// Auth
+		r.Post("/auth/login", authH.Login)
+		r.Post("/auth/register", authH.Register)
+		r.Post("/auth/logout", authH.Logout)
+		r.Get("/auth/me", authH.Me)
+
 		// Plans
 		r.Get("/plans", plansH.List)
 		r.Post("/plans", plansH.Create)
 		r.Get("/plans/{planID}", plansH.Get)
 		r.Put("/plans/{planID}", plansH.Update)
 		r.Delete("/plans/{planID}", plansH.Delete)
+		r.Post("/plans/{planID}/admins", plansH.AddAdmin)
+		r.Delete("/plans/{planID}/admins", plansH.RemoveAdmin)
 
 		// Capacity Plans
 		r.Get("/plans/{planID}/capacity", capacityH.List)
