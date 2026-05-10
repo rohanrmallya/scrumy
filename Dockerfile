@@ -7,7 +7,7 @@ COPY web/ ./
 RUN npm run build
 
 # --- Stage 2: Build Backend ---
-FROM golang:1.24 AS backend-builder
+FROM golang:1.26 AS backend-builder
 WORKDIR /app
 # Install gcc for CGO (required for SQLite)
 RUN apt-get update && apt-get install -y gcc libc6-dev
