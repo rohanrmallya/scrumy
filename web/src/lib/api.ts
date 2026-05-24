@@ -188,10 +188,17 @@ export interface JiraTotals {
 	avg_hours_per_sp: number;
 }
 
+export interface JiraWorklogItem {
+	issue_key: string;
+	issue_summary: string;
+	hours_logged: number;
+}
+
 export interface JiraLeaderboardEntry {
 	author_name: string;
 	hours_logged: number;
 	percentage: number;
+	worklogs?: JiraWorklogItem[];
 }
 
 export interface JiraSnapshotData {

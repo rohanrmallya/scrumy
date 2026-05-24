@@ -51,10 +51,17 @@ type JiraTotals struct {
 	AvgHoursPerSP    float64 `json:"avg_hours_per_sp"`
 }
 
+type JiraWorklogItem struct {
+	IssueKey     string  `json:"issue_key"`
+	IssueSummary string  `json:"issue_summary"`
+	HoursLogged  float64 `json:"hours_logged"`
+}
+
 type JiraLeaderboardEntry struct {
-	AuthorName  string  `json:"author_name"`
-	HoursLogged float64 `json:"hours_logged"`
-	Percentage  float64 `json:"percentage"`
+	AuthorName  string            `json:"author_name"`
+	HoursLogged float64           `json:"hours_logged"`
+	Percentage  float64           `json:"percentage"`
+	Worklogs    []JiraWorklogItem `json:"worklogs"`
 }
 
 type JiraSnapshotData struct {

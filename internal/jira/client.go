@@ -197,6 +197,8 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string, allWo
 	worklogFilteredHours := 0.0
 	worklogFilteredCount := 0
 	leaderboardMap := map[string]float64{}
+	authorWorklogsMap := map[string]map[string]float64{}
+	issueSummaries := map[string]string{}
 
 	var issues []models.JiraIssue
 	totalStoryPoints := 0.0
@@ -206,6 +208,7 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string, allWo
 		if raw, ok := issue.RawFields["summary"]; ok {
 			_ = json.Unmarshal(raw, &summary)
 		}
+		issueSummaries[issue.Key] = summary
 
 		var status jiraStatus
 		if raw, ok := issue.RawFields["status"]; ok {
@@ -266,6 +269,12 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string, allWo
 					author = "Unknown"
 				}
 				leaderboardMap[author] += hours
+
+				// Track detailed worklogs per author per issue
+				if _, ok := authorWorklogsMap[author]; !ok {
+					authorWorklogsMap[author] = map[string]float64{}
+				}
+				authorWorklogsMap[author][issue.Key] += hours
 			}
 		}
 
@@ -285,10 +294,27 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string, allWo
 		if worklogFilteredHours > 0 {
 			pct = (hours / worklogFilteredHours) * 100.0
 		}
+
+		var items []models.JiraWorklogItem
+		for issueKey, loggedHours := range authorWorklogsMap[author] {
+			items = append(items, models.JiraWorklogItem{
+				IssueKey:     issueKey,
+				IssueSummary: issueSummaries[issueKey],
+				HoursLogged:  round2(loggedHours),
+			})
+		}
+		sort.Slice(items, func(i, j int) bool {
+			if items[i].HoursLogged == items[j].HoursLogged {
+				return items[i].IssueKey < items[j].IssueKey
+			}
+			return items[i].HoursLogged > items[j].HoursLogged
+		})
+
 		leaderboard = append(leaderboard, models.JiraLeaderboardEntry{
 			AuthorName:  author,
 			HoursLogged: round2(hours),
 			Percentage:  round2(pct),
+			Worklogs:    items,
 		})
 	}
 

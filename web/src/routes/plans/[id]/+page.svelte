@@ -31,15 +31,13 @@
   let testResult = $state<{ ok: boolean; message: string } | null>(null);
   let savingSettings = $state(false);
 
-  // Snapshots Form / Detail Form
-  let selectedSnapshot = $state<JiraSnapshot | null>(null);
+  // Snapshots Form
   let showCreateSnapshotForm = $state(false);
   let newSnapshotName = $state('');
   let newSnapshotStart = $state('');
   let newSnapshotEnd = $state('');
   let newSnapshotAllWorklogs = $state(false);
   let creatingSnapshot = $state(false);
-  let loadingSnapshotDetails = $state(false);
 
   onMount(async () => {
     try {
@@ -136,41 +134,18 @@
         all_worklogs: newSnapshotAllWorklogs,
       });
       snapshots = [snap, ...snapshots];
-      selectedSnapshot = snap;
       showCreateSnapshotForm = false;
       newSnapshotName = '';
       newSnapshotStart = '';
       newSnapshotEnd = '';
       newSnapshotAllWorklogs = false;
+      
+      // Navigate to the dedicated snapshot page!
+      goto(`/plans/${planID}/snapshots/${snap.id}`);
     } catch (e: any) {
       alert(`Failed to create snapshot: ${e.message}`);
     } finally {
       creatingSnapshot = false;
-    }
-  }
-
-  async function viewSnapshot(id: string) {
-    loadingSnapshotDetails = true;
-    try {
-      selectedSnapshot = await api.jira.getSnapshot(planID, id);
-    } catch (e: any) {
-      alert(`Failed to load snapshot: ${e.message}`);
-    } finally {
-      loadingSnapshotDetails = false;
-    }
-  }
-
-  async function refreshSnapshot(id: string) {
-    if (!confirm('Re-fetch snapshot data from Jira?')) return;
-    loadingSnapshotDetails = true;
-    try {
-      const updated = await api.jira.refreshSnapshot(planID, id);
-      snapshots = snapshots.map(s => s.id === id ? updated : s);
-      selectedSnapshot = updated;
-    } catch (e: any) {
-      alert(`Failed to refresh snapshot: ${e.message}`);
-    } finally {
-      loadingSnapshotDetails = false;
     }
   }
 
@@ -179,50 +154,8 @@
     try {
       await api.jira.deleteSnapshot(planID, id);
       snapshots = snapshots.filter(s => s.id !== id);
-      if (selectedSnapshot?.id === id) {
-        selectedSnapshot = null;
-      }
     } catch (e: any) {
       alert(`Failed to delete: ${e.message}`);
-    }
-  }
-
-  async function createRetroFromSnapshot(snap: JiraSnapshot) {
-    try {
-      const title = `${snap.name} Retro`;
-      const pres = await api.presentations.create(planID, {
-        type: 'retro',
-        template_id: 'default',
-        title: title,
-        sprint_name: snap.name,
-      });
-
-      const content = {
-        previous_data: {
-          total_sp_delivered: snap.data.totals.total_story_points,
-          total_hours_logged: snap.data.totals.total_hours_logged,
-          total_work_logs: snap.data.totals.total_work_logs,
-          avg_hours_per_sp: snap.data.totals.avg_hours_per_sp,
-          planned_sp: 0,
-          executed_sp: snap.data.totals.total_story_points,
-          spillovers: 0,
-          total_epics_delivered: 0,
-        },
-        feedback: ['', ''],
-        contributors: [],
-        closing_text: '',
-      };
-
-      await api.presentations.update(planID, pres.id, {
-        title: title,
-        template_id: 'default',
-        sprint_name: snap.name,
-        content: content,
-      });
-
-      goto(`/plans/${planID}/presentations/${pres.id}/edit`);
-    } catch (e: any) {
-      alert(`Failed to create presentation: ${e.message}`);
     }
   }
 
@@ -336,12 +269,12 @@
         class="tab-btn {activeTab === 'jira' ? 'active' : ''}" 
         onclick={() => activeTab = 'jira'}
       >
-        Jira Integration & Snapshots
+        Jira Integration
       </button>
     </div>
 
     {#if activeTab === 'overview'}
-      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start;">
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:20px; align-items:start;">
         <!-- Capacity Plans -->
         <div class="card">
           <div class="card-header">
@@ -479,6 +412,92 @@
           </div>
         </div>
 
+        <!-- Jira Snapshots -->
+        <div class="card">
+          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="flex items-center gap-2">
+              <span style="font-size:18px;">📸</span>
+              <h2 class="font-semibold" style="font-size:16px;">Jira Snapshots</h2>
+            </div>
+            {#if plan?.is_admin && plan?.jira_url}
+              <button class="btn btn-primary btn-xs" onclick={() => showCreateSnapshotForm = !showCreateSnapshotForm}>
+                {showCreateSnapshotForm ? 'Cancel' : '+ Create'}
+              </button>
+            {/if}
+          </div>
+
+          <div>
+            {#if showCreateSnapshotForm}
+              <div style="background:var(--c-bg); padding:16px; display:flex; flex-direction:column; gap:12px; border-bottom:1px solid var(--c-border);">
+                <p class="font-bold text-xs" style="color:var(--c-primary); margin-bottom: 4px;">Generate Date-Bounded Snapshot</p>
+                
+                {#if allSprints.length > 0}
+                  <div class="form-group">
+                    <label class="label" style="font-size:10px;">Pre-fill from Sprint</label>
+                    <select class="input" style="padding:4px; font-size:11px;" onchange={e => prefillSnapshotFromSprint(e.currentTarget.value)}>
+                      <option value="">-- Select a Sprint --</option>
+                      {#each allSprints as s}
+                        <option value={s.id}>{s.name} ({s.start_date} to {s.end_date})</option>
+                      {/each}
+                    </select>
+                  </div>
+                {/if}
+
+                <div class="form-group">
+                  <label class="label" style="font-size:10px;">Snapshot Name</label>
+                  <input class="input" style="padding:6px; font-size:12px;" bind:value={newSnapshotName} placeholder="e.g. Sprint 24 Retro" />
+                </div>
+                <div class="form-group">
+                  <label class="label" style="font-size:10px;">Start Date</label>
+                  <input type="date" class="input" style="padding:4px; font-size:12px;" bind:value={newSnapshotStart} />
+                </div>
+                <div class="form-group">
+                  <label class="label" style="font-size:10px;">End Date</label>
+                  <input type="date" class="input" style="padding:4px; font-size:12px;" bind:value={newSnapshotEnd} />
+                </div>
+                <div class="form-group flex items-center gap-2" style="margin-top: 4px; margin-bottom: 6px;">
+                  <input type="checkbox" id="newSnapshotAllWorklogs" bind:checked={newSnapshotAllWorklogs} />
+                  <label for="newSnapshotAllWorklogs" class="label" style="font-size:11px; margin: 0; cursor: pointer;">Include all worklogs (no date filter)</label>
+                </div>
+                
+                <button class="btn btn-primary btn-sm" onclick={createSnapshot} disabled={creatingSnapshot} style="margin-top:6px; font-size:11px; width: 100%;">
+                  {creatingSnapshot ? 'Generating...' : '✓ Generate'}
+                </button>
+              </div>
+            {/if}
+
+            {#if snapshots.length === 0}
+              <div class="empty-state">
+                <p>No snapshots generated yet.</p>
+              </div>
+            {:else}
+              {#each snapshots as s (s.id)}
+                <a
+                  href="/plans/{planID}/snapshots/{s.id}"
+                  style="display:block; padding:16px 20px; border-bottom:1px solid var(--c-border); text-decoration:none; transition:background 150ms ease; cursor:pointer;"
+                  onmouseover={e => (e.currentTarget as HTMLElement).style.background = 'var(--c-bg)'}
+                  onmouseout={e => (e.currentTarget as HTMLElement).style.background = ''}
+                  onfocus={e => (e.currentTarget as HTMLElement).style.background = 'var(--c-bg)'}
+                  onblur={e => (e.currentTarget as HTMLElement).style.background = ''}
+                >
+                  <div class="flex justify-between items-center" style="margin-bottom:8px;">
+                    <span class="font-semibold" style="font-size:14px; color:var(--c-primary);">{s.name}</span>
+                    {#if plan?.is_admin}
+                      <button
+                        class="btn-icon"
+                        style="color:var(--c-danger); font-size:14px;"
+                        onclick={(e) => { e.preventDefault(); e.stopPropagation(); deleteSnapshot(s.id); }}
+                        title="Delete"
+                      >✕</button>
+                    {/if}
+                  </div>
+                  <p class="text-xs text-muted">{s.start_date} to {s.end_date}</p>
+                </a>
+              {/each}
+            {/if}
+          </div>
+        </div>
+
         <!-- Admins Management -->
         {#if plan?.is_admin}
           <div class="card" style="grid-column: 1 / -1;">
@@ -503,297 +522,66 @@
         {/if}
       </div>
     {:else if activeTab === 'jira'}
-      <!-- Jira snapshots and settings -->
-      <div style="display:grid; grid-template-columns: 320px 1fr; gap:20px; align-items:start;">
-        <!-- Left Side: Config and Snapshots List -->
-        <div style="display:flex; flex-direction:column; gap:20px;">
-          
-          <!-- Jira Credentials Settings -->
-          <div class="card">
-            <div class="card-header">
-              <div class="flex items-center gap-2">
-                <span>⚙️</span>
-                <h2 class="font-semibold" style="font-size:15px;">Jira Configuration</h2>
-              </div>
-            </div>
-            <div class="card-body" style="display:flex; flex-direction:column; gap:12px; padding-top:16px;">
-              <div class="form-group">
-                <label class="label" style="font-size:11px;">Jira URL</label>
-                <input class="input" bind:value={jiraURL} placeholder="https://your-domain.atlassian.net" disabled={!plan?.is_admin} />
-              </div>
-              <div class="form-group">
-                <label class="label" style="font-size:11px;">Email / Username</label>
-                <input class="input" bind:value={jiraUser} placeholder="email@company.com" disabled={!plan?.is_admin} />
-              </div>
-              <div class="form-group">
-                <label class="label" style="font-size:11px;">API Token</label>
-                <input type="password" class="input" bind:value={jiraToken} placeholder={jiraTokenSet ? "•••••••• (Configured)" : "Enter API Token"} disabled={!plan?.is_admin} />
-              </div>
-              <div class="form-group">
-                <label class="label" style="font-size:11px;">Base JQL Filter</label>
-                <input class="input" bind:value={jiraJQL} placeholder="project = PROJ AND statusCategory = Done" disabled={!plan?.is_admin} />
-              </div>
-              <div class="form-group">
-                <label class="label" style="font-size:11px;">Story Points Field (Optional)</label>
-                <input class="input" bind:value={jiraSPField} placeholder="e.g. customfield_10016" disabled={!plan?.is_admin} />
-                <p class="text-xs text-muted" style="margin-top:2px; font-size:10px;">Left blank to auto-detect "Story Points"</p>
-              </div>
-              <div class="form-group flex items-center gap-2" style="margin-top: 4px;">
-                <input type="checkbox" id="jiraInsecure" bind:checked={jiraInsecure} disabled={!plan?.is_admin} />
-                <label for="jiraInsecure" class="label" style="font-size:11px; margin: 0; cursor: pointer;">Skip TLS Verification (Insecure)</label>
-              </div>
-
-              {#if plan?.is_admin}
-                <div class="flex gap-2" style="margin-top:8px;">
-                  <button class="btn btn-secondary btn-sm grow" onclick={testJiraConnection} disabled={testingConnection}>
-                    {testingConnection ? 'Testing...' : 'Test Connection'}
-                  </button>
-                  <button class="btn btn-primary btn-sm grow" onclick={saveJiraSettings} disabled={savingSettings}>
-                    {savingSettings ? 'Saving...' : 'Save Settings'}
-                  </button>
-                </div>
-              {/if}
-
-              {#if testResult}
-                <div class="badge {testResult.ok ? 'badge-success' : 'badge-danger'}" style="margin-top:8px; padding:10px; border-radius:6px; font-size:11px; text-transform:none; letter-spacing:0; text-align:left; display:block; font-weight:400; line-height:1.4;">
-                  {testResult.message}
-                </div>
-              {/if}
+      <!-- Jira settings -->
+      <div style="max-width:600px; margin:0 auto;">
+        <!-- Jira Credentials Settings -->
+        <div class="card">
+          <div class="card-header">
+            <div class="flex items-center gap-2">
+              <span>⚙️</span>
+              <h2 class="font-semibold" style="font-size:15px;">Jira Configuration</h2>
             </div>
           </div>
+          <div class="card-body" style="display:flex; flex-direction:column; gap:12px; padding-top:16px;">
+            <div class="form-group">
+              <label class="label" style="font-size:11px;">Jira URL</label>
+              <input class="input" bind:value={jiraURL} placeholder="https://your-domain.atlassian.net" disabled={!plan?.is_admin} />
+            </div>
+            <div class="form-group">
+              <label class="label" style="font-size:11px;">Email / Username</label>
+              <input class="input" bind:value={jiraUser} placeholder="email@company.com" disabled={!plan?.is_admin} />
+            </div>
+            <div class="form-group">
+              <label class="label" style="font-size:11px;">API Token</label>
+              <input type="password" class="input" bind:value={jiraToken} placeholder={jiraTokenSet ? "•••••••• (Configured)" : "Enter API Token"} disabled={!plan?.is_admin} />
+            </div>
+            <div class="form-group">
+              <label class="label" style="font-size:11px;">Base JQL Filter</label>
+              <input class="input" bind:value={jiraJQL} placeholder="project = PROJ AND statusCategory = Done" disabled={!plan?.is_admin} />
+            </div>
+            <div class="form-group">
+              <label class="label" style="font-size:11px;">Story Points Field (Optional)</label>
+              <input class="input" bind:value={jiraSPField} placeholder="e.g. customfield_10016" disabled={!plan?.is_admin} />
+              <p class="text-xs text-muted" style="margin-top:2px; font-size:10px;">Left blank to auto-detect "Story Points"</p>
+            </div>
+            <div class="form-group flex items-center gap-2" style="margin-top: 4px;">
+              <input type="checkbox" id="jiraInsecure" bind:checked={jiraInsecure} disabled={!plan?.is_admin} />
+              <label for="jiraInsecure" class="label" style="font-size:11px; margin: 0; cursor: pointer;">Skip TLS Verification (Insecure)</label>
+            </div>
 
-          <!-- Snapshots List -->
-          <div class="card">
-            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-              <div class="flex items-center gap-2">
-                <span>📸</span>
-                <h2 class="font-semibold" style="font-size:15px;">Jira Snapshots</h2>
-              </div>
-              {#if plan?.is_admin && plan?.jira_url}
-                <button class="btn btn-primary btn-xs" onclick={() => showCreateSnapshotForm = !showCreateSnapshotForm}>
-                  {showCreateSnapshotForm ? 'Cancel' : '+ Create'}
+            {#if plan?.is_admin}
+              <div class="flex gap-2" style="margin-top:8px;">
+                <button class="btn btn-secondary btn-sm grow" onclick={testJiraConnection} disabled={testingConnection}>
+                  {testingConnection ? 'Testing...' : 'Test Connection'}
                 </button>
-              {/if}
-            </div>
-            
-            <div class="card-body" style="display:flex; flex-direction:column; gap:8px; padding-top:12px;">
-              {#if showCreateSnapshotForm}
-                <div style="background:var(--c-bg); border-radius:8px; padding:12px; display:flex; flex-direction:column; gap:10px; border:1px solid var(--c-border); margin-bottom:10px;">
-                  <p class="font-bold text-xs" style="color:var(--c-primary);">Create Date-Bounded Snapshot</p>
-                  
-                  {#if allSprints.length > 0}
-                    <div class="form-group">
-                      <label class="label" style="font-size:10px;">Pre-fill from Sprint</label>
-                      <select class="input" style="padding:4px; font-size:11px;" onchange={e => prefillSnapshotFromSprint(e.currentTarget.value)}>
-                        <option value="">-- Select a Sprint --</option>
-                        {#each allSprints as s}
-                          <option value={s.id}>{s.name} ({s.start_date} to {s.end_date})</option>
-                        {/each}
-                      </select>
-                    </div>
-                  {/if}
+                <button class="btn btn-primary btn-sm grow" onclick={saveJiraSettings} disabled={savingSettings}>
+                  {savingSettings ? 'Saving...' : 'Save Settings'}
+                </button>
+              </div>
+            {/if}
 
-                  <div class="form-group">
-                    <label class="label" style="font-size:10px;">Snapshot Name</label>
-                    <input class="input" style="padding:6px; font-size:12px;" bind:value={newSnapshotName} placeholder="e.g. Sprint 24 Retro" />
-                  </div>
-                  <div class="form-group">
-                    <label class="label" style="font-size:10px;">Start Date</label>
-                    <input type="date" class="input" style="padding:4px; font-size:12px;" bind:value={newSnapshotStart} />
-                  </div>
-                  <div class="form-group">
-                    <label class="label" style="font-size:10px;">End Date</label>
-                    <input type="date" class="input" style="padding:4px; font-size:12px;" bind:value={newSnapshotEnd} />
-                  </div>
-                  <div class="form-group flex items-center gap-2" style="margin-top: 4px; margin-bottom: 6px;">
-                    <input type="checkbox" id="newSnapshotAllWorklogs" bind:checked={newSnapshotAllWorklogs} />
-                    <label for="newSnapshotAllWorklogs" class="label" style="font-size:11px; margin: 0; cursor: pointer;">Include all worklogs (no date filter)</label>
-                  </div>
-                  
-                  <button class="btn btn-primary btn-sm" onclick={createSnapshot} disabled={creatingSnapshot} style="margin-top:6px; font-size:11px;">
-                    {creatingSnapshot ? 'Fetching & Saving...' : '✓ Generate'}
-                  </button>
-                </div>
-              {/if}
-
-              {#if snapshots.length === 0}
-                <div class="empty-state" style="padding:20px 0;">
-                  <p style="font-size:12px;">No snapshots yet.</p>
-                </div>
-              {:else}
-                <div style="display:flex; flex-direction:column; gap:6px;">
-                  {#each snapshots as s (s.id)}
-                    <button
-                      class="flex flex-col items-start gap-1"
-                      style="width:100%; text-align:left; padding:12px 14px; border-radius:8px; border:1px solid {selectedSnapshot?.id === s.id ? 'var(--c-primary)' : 'var(--c-border)'}; background:{selectedSnapshot?.id === s.id ? 'var(--c-primary-lt)' : 'var(--c-bg)'}; cursor:pointer; transition:all 150ms ease;"
-                      onclick={() => viewSnapshot(s.id)}
-                    >
-                      <span class="font-semibold text-sm" style="color:{selectedSnapshot?.id === s.id ? 'var(--c-primary)' : 'var(--c-text)'}">{s.name}</span>
-                      <span class="text-xs text-muted">{s.start_date} to {s.end_date}</span>
-                    </button>
-                  {/each}
-                </div>
-              {/if}
-            </div>
+            {#if testResult}
+              <div class="badge {testResult.ok ? 'badge-success' : 'badge-danger'}" style="margin-top:8px; padding:10px; border-radius:6px; font-size:11px; text-transform:none; letter-spacing:0; text-align:left; display:block; font-weight:400; line-height:1.4;">
+                {testResult.message}
+              </div>
+            {/if}
           </div>
-        </div>
-
-        <!-- Right Side: Detailed Analytics Viewer -->
-        <div class="card" style="min-height:500px;">
-          {#if loadingSnapshotDetails}
-            <div class="flex items-center justify-center gap-3" style="padding:150px 0;">
-              <span class="spinner"></span>
-              <span class="text-muted">Analyzing Jira data…</span>
-            </div>
-          {:else if selectedSnapshot}
-            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-              <div>
-                <h2 class="font-bold text-lg">{selectedSnapshot.name}</h2>
-                <p class="text-xs text-muted" style="margin-top:3px; display:flex; align-items:center; gap:6px;">
-                  Analyzed: {selectedSnapshot.start_date} to {selectedSnapshot.end_date}
-                  {#if selectedSnapshot.all_worklogs}
-                    <span class="badge badge-warning" style="font-size:9px; padding:1px 6px; text-transform:none; font-weight:normal; letter-spacing:0;">all worklogs</span>
-                  {:else}
-                    <span class="badge badge-default" style="font-size:9px; padding:1px 6px; text-transform:none; font-weight:normal; letter-spacing:0;">filtered worklogs</span>
-                  {/if}
-                </p>
-              </div>
-              <div class="flex gap-2">
-                {#if plan?.is_admin}
-                  <button class="btn btn-secondary btn-sm" onclick={() => refreshSnapshot(selectedSnapshot!.id)}>🔄 Refresh</button>
-                  <button class="btn btn-outline-danger btn-sm" onclick={() => deleteSnapshot(selectedSnapshot!.id)}>✕ Delete</button>
-                {/if}
-                <button class="btn btn-primary btn-sm" onclick={() => createRetroFromSnapshot(selectedSnapshot!)}>🎤 Create Retro Presentation</button>
-              </div>
-            </div>
-
-            <div class="card-body" style="display:flex; flex-direction:column; gap:24px; padding-top:20px;">
-              <!-- Metrics Grid -->
-              <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:16px;">
-                <div style="background:var(--c-bg); padding:16px; border-radius:8px; border:1px solid var(--c-border);">
-                  <p class="text-xs text-muted font-semibold" style="text-transform:uppercase; letter-spacing:0.05em; font-size:10px;">SP Burned</p>
-                  <p class="text-2xl font-bold" style="margin-top:6px; color:var(--c-success);">{selectedSnapshot.data.totals.total_story_points}</p>
-                </div>
-                <div style="background:var(--c-bg); padding:16px; border-radius:8px; border:1px solid var(--c-border);">
-                  <p class="text-xs text-muted font-semibold" style="text-transform:uppercase; letter-spacing:0.05em; font-size:10px;">Hours Logged</p>
-                  <p class="text-2xl font-bold" style="margin-top:6px; color:var(--c-primary);">{selectedSnapshot.data.totals.total_hours_logged} <span class="text-sm font-normal text-muted">hrs</span></p>
-                </div>
-                <div style="background:var(--c-bg); padding:16px; border-radius:8px; border:1px solid var(--c-border);">
-                  <p class="text-xs text-muted font-semibold" style="text-transform:uppercase; letter-spacing:0.05em; font-size:10px;">Worklogs Count</p>
-                  <p class="text-2xl font-bold" style="margin-top:6px;">{selectedSnapshot.data.totals.total_work_logs}</p>
-                </div>
-                <div style="background:var(--c-bg); padding:16px; border-radius:8px; border:1px solid var(--c-border);">
-                  <p class="text-xs text-muted font-semibold" style="text-transform:uppercase; letter-spacing:0.05em; font-size:10px;">Hours / SP</p>
-                  <p class="text-2xl font-bold" style="margin-top:6px;">{selectedSnapshot.data.totals.avg_hours_per_sp} <span class="text-sm font-normal text-muted">avg</span></p>
-                </div>
-              </div>
-
-              <!-- Leaderboard and Details -->
-              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px; align-items:start;">
-                
-                <!-- Logged Hours Leaderboard -->
-                <div style="background:var(--c-bg); border-radius:8px; padding:16px; border:1px solid var(--c-border);">
-                  <h3 class="font-semibold text-sm" style="margin-bottom:14px; display:flex; align-items:center; gap:8px;">
-                    <span>🏆</span> Logged Hours Leaderboard
-                  </h3>
-                  {#if !selectedSnapshot.data.leaderboard || selectedSnapshot.data.leaderboard.length === 0}
-                    <p class="text-xs text-muted" style="padding:16px 0; text-align:center;">No work logged within this period.</p>
-                  {:else}
-                    <div style="display:flex; flex-direction:column; gap:12px;">
-                      {#each selectedSnapshot.data.leaderboard as entry, idx}
-                        <div>
-                          <div class="flex justify-between items-center text-xs" style="margin-bottom:6px;">
-                            <span class="font-semibold">{idx + 1}. {entry.author_name}</span>
-                            <span class="text-muted font-medium">{entry.hours_logged.toFixed(1)} hrs ({entry.percentage.toFixed(0)}%)</span>
-                          </div>
-                          <div style="width:100%; height:8px; background:var(--c-border); border-radius:4px; overflow:hidden;">
-                            <div style="height:100%; width:{entry.percentage}%; background:var(--c-primary); border-radius:4px;"></div>
-                          </div>
-                        </div>
-                      {/each}
-                    </div>
-                  {/if}
-                </div>
-
-                <!-- Info Box -->
-                <div style="background:var(--c-bg); border-radius:8px; padding:16px; border:1px solid var(--c-border); height: 100%;">
-                  <h3 class="font-semibold text-sm" style="margin-bottom:10px;">Snapshot Insights</h3>
-                  <p class="text-xs text-muted" style="line-height:1.6; margin-bottom:12px;">
-                    This analysis is generated dynamically by querying Jira Cloud. Sprints metrics include issues matching JQL that were set to a completed state category during the snapshot dates.
-                  </p>
-                  <p class="text-xs text-muted" style="line-height:1.6;">
-                    The leaderboard highlights time logs created <strong>strictly within the start/end dates</strong> of the snapshot on the retrieved issues.
-                  </p>
-                  <div style="margin-top:16px; border-top:1px solid var(--c-border); padding-top:12px; font-size:11px; display:flex; flex-direction:column; gap:8px;">
-                    <div class="flex justify-between">
-                      <span class="text-muted">Closed Issues count:</span>
-                      <span class="font-semibold">{selectedSnapshot.data.issues?.length || 0}</span>
-                    </div>
-                    <div class="flex justify-between">
-                      <span class="text-muted">Total story points delivered:</span>
-                      <span class="font-semibold text-success">{selectedSnapshot.data.totals.total_story_points}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Issue List Table -->
-              <div>
-                <h3 class="font-semibold text-sm" style="margin-bottom:12px; display:flex; align-items:center; gap:8px;">
-                  <span>📋</span> Issues in Snapshot ({selectedSnapshot.data.issues?.length || 0})
-                </h3>
-                {#if !selectedSnapshot.data.issues || selectedSnapshot.data.issues.length === 0}
-                  <p class="text-xs text-muted" style="padding:20px 0; text-align:center; background:var(--c-bg); border-radius:8px; border:1px dashed var(--c-border);">No closed issues found in this range.</p>
-                {:else}
-                  <div style="max-height:300px; overflow-y:auto; border:1px solid var(--c-border); border-radius:8px;">
-                    <table style="width:100%; border-collapse:collapse; text-align:left; font-size:12px;">
-                      <thead>
-                        <tr style="border-bottom:1px solid var(--c-border); background:var(--c-bg); color:var(--c-text-3); position:sticky; top:0; z-index:1;">
-                          <th style="padding:10px; font-weight:600;">Key</th>
-                          <th style="padding:10px; font-weight:600;">Summary</th>
-                          <th style="padding:10px; font-weight:600;">Status</th>
-                          <th style="padding:10px; font-weight:600; text-align:right;">Story Points</th>
-                          <th style="padding:10px; font-weight:600; text-align:right;">Logged Hours</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {#each selectedSnapshot.data.issues as issue}
-                          <tr style="border-bottom:1px solid var(--c-border); background:var(--c-surface);">
-                            <td style="padding:10px; font-weight:600; white-space:nowrap;">
-                              {#if plan?.jira_url}
-                                <a href="{plan.jira_url}/browse/{issue.key}" target="_blank" class="text-primary" style="text-decoration:none;">{issue.key}</a>
-                              {:else}
-                                {issue.key}
-                              {/if}
-                            </td>
-                            <td style="padding:10px; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title={issue.summary}>{issue.summary}</td>
-                            <td style="padding:10px; white-space:nowrap;">
-                              <span class="badge badge-default" style="font-size:10px; padding:2px 6px;">{issue.status}</span>
-                            </td>
-                            <td style="padding:10px; text-align:right; font-weight:500;">{issue.story_points > 0 ? issue.story_points : '—'}</td>
-                            <td style="padding:10px; text-align:right; font-weight:500; color:var(--c-primary);">{issue.time_spent_hours.toFixed(1)} hrs</td>
-                          </tr>
-                        {/each}
-                      </tbody>
-                    </table>
-                  </div>
-                {/if}
-              </div>
-            </div>
-          {:else}
-            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:var(--c-text-3); padding:100px 24px; text-align:center;">
-              <span style="font-size:54px; margin-bottom:16px;">📊</span>
-              <h3 class="font-bold text-lg" style="color:var(--c-text-2);">No Snapshot Selected</h3>
-              <p class="text-xs text-muted" style="max-width:340px; margin-top:8px; line-height:1.5;">
-                Choose an existing snapshot on the left, or create a new date-bounded snapshot to pull sprint metrics and worklog statistics from Jira Cloud.
-              </p>
-            </div>
-          {/if}
         </div>
       </div>
     {/if}
   {/if}
 </div>
+
 
 <style>
   .btn-outline-danger {
@@ -830,5 +618,16 @@
     padding: 4px 8px;
     font-size: 11px;
     border-radius: 4px;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 </style>

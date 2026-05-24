@@ -127,6 +127,23 @@ func TestClient_FetchRetroData(t *testing.T) {
 	if data.Leaderboard[0].HoursLogged != 5.0 {
 		t.Errorf("expected Alice to have 5.0 hours logged, got %f", data.Leaderboard[0].HoursLogged)
 	}
+
+	if len(data.Leaderboard[0].Worklogs) != 1 {
+		t.Fatalf("expected Alice to have 1 worklog item, got %d", len(data.Leaderboard[0].Worklogs))
+	}
+
+	wlItem := data.Leaderboard[0].Worklogs[0]
+	if wlItem.IssueKey != "PROJ-101" {
+		t.Errorf("expected worklog issue key PROJ-101, got %s", wlItem.IssueKey)
+	}
+
+	if wlItem.IssueSummary != "Sample Task" {
+		t.Errorf("expected worklog issue summary 'Sample Task', got '%s'", wlItem.IssueSummary)
+	}
+
+	if wlItem.HoursLogged != 5.0 {
+		t.Errorf("expected worklog hours logged 5.0, got %f", wlItem.HoursLogged)
+	}
 }
 
 func TestClient_InsecureTLS(t *testing.T) {
