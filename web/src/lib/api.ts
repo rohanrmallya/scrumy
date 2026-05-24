@@ -40,6 +40,11 @@ export interface Plan {
 	presentation_count: number;
 	admins?: string[];
 	is_admin?: boolean;
+	jira_url?: string;
+	jira_user?: string;
+	jira_jql?: string;
+	jira_sp_field?: string;
+	jira_token_set?: boolean;
 }
 
 export interface CapacityPlan {
@@ -166,6 +171,53 @@ export interface RetroContent {
 	closing_text?: string;
 }
 
+export interface JiraIssue {
+	key: string;
+	summary: string;
+	status: string;
+	story_points: number;
+	time_spent_hours: number;
+	status_category_changed_date: string;
+}
+
+export interface JiraTotals {
+	total_story_points: number;
+	total_hours_logged: number;
+	total_work_logs: number;
+	avg_hours_per_sp: number;
+}
+
+export interface JiraLeaderboardEntry {
+	author_name: string;
+	hours_logged: number;
+	percentage: number;
+}
+
+export interface JiraSnapshotData {
+	issues: JiraIssue[];
+	totals: JiraTotals;
+	leaderboard: JiraLeaderboardEntry[];
+}
+
+export interface JiraSnapshot {
+	id: string;
+	plan_id: string;
+	name: string;
+	start_date: string;
+	end_date: string;
+	data: JiraSnapshotData;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface JiraSettings {
+	jira_url: string;
+	jira_user: string;
+	jira_token?: string;
+	jira_jql: string;
+	jira_sp_field: string;
+}
+
 // ─── API calls ────────────────────────────────────────────────────────────────
 export const api = {
 	plans: {
@@ -202,6 +254,15 @@ export const api = {
 		publish: (planID: string, presID: string) => post<Presentation>(`/plans/${planID}/presentations/${presID}/publish`),
 		unpublish: (planID: string, presID: string) => post<Presentation>(`/plans/${planID}/presentations/${presID}/unpublish`),
 		addFeedback: (planID: string, presID: string, item: string) => post<Presentation>(`/plans/${planID}/presentations/${presID}/feedback`, { item }),
+	},
+	jira: {
+		saveSettings: (planID: string, settings: JiraSettings) => put<{ updated: boolean }>(`/plans/${planID}/jira/settings`, settings),
+		testConnection: (planID: string, settings: Partial<JiraSettings>) => post<{ ok: boolean }>(`/plans/${planID}/jira/test-connection`, settings),
+		createSnapshot: (planID: string, body: { name: string; start_date: string; end_date: string }) => post<JiraSnapshot>(`/plans/${planID}/jira/snapshots`, body),
+		listSnapshots: (planID: string) => get<JiraSnapshot[]>(`/plans/${planID}/jira/snapshots`),
+		getSnapshot: (planID: string, id: string) => get<JiraSnapshot>(`/plans/${planID}/jira/snapshots/${id}`),
+		refreshSnapshot: (planID: string, id: string) => post<JiraSnapshot>(`/plans/${planID}/jira/snapshots/${id}/refresh`),
+		deleteSnapshot: (planID: string, id: string) => del<{ deleted: boolean }>(`/plans/${planID}/jira/snapshots/${id}`),
 	},
 	auth: {
 		login: (body: AuthRequest) => post<User>('/auth/login', body),

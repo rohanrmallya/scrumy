@@ -48,20 +48,20 @@ func (db *DB) Migrate() error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 	for rows.Next() {
 		var cid int
 		var name, dtype string
 		var notnull, pk int
 		var dflt any
 		if err := rows.Scan(&cid, &name, &dtype, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
 			return err
 		}
 		if name == "template_id" {
 			hasTemplateID = true
-			break
 		}
 	}
+	rows.Close()
 
 	if !hasTemplateID {
 		log.Println("⚡ Migrating: adding template_id to presentations table")
@@ -70,7 +70,77 @@ func (db *DB) Migrate() error {
 			return err
 		}
 	}
+
+	// Migration 2: Add Jira columns to plans table if not exists
+	planColumns, err := db.getTableColumns("plans")
+	if err != nil {
+		return fmt.Errorf("get plans columns: %w", err)
+	}
+	newCols := map[string]string{
+		"jira_url":      "ALTER TABLE plans ADD COLUMN jira_url TEXT NOT NULL DEFAULT ''",
+		"jira_user":     "ALTER TABLE plans ADD COLUMN jira_user TEXT NOT NULL DEFAULT ''",
+		"jira_token":    "ALTER TABLE plans ADD COLUMN jira_token TEXT NOT NULL DEFAULT ''",
+		"jira_jql":      "ALTER TABLE plans ADD COLUMN jira_jql TEXT NOT NULL DEFAULT ''",
+		"jira_sp_field": "ALTER TABLE plans ADD COLUMN jira_sp_field TEXT NOT NULL DEFAULT ''",
+	}
+	for col, sqlStmt := range newCols {
+		found := false
+		for _, c := range planColumns {
+			if c == col {
+				found = true
+				break
+			}
+		}
+		if !found {
+			log.Printf("⚡ Migrating: adding %s to plans table\n", col)
+			if _, err := db.Exec(sqlStmt); err != nil {
+				return fmt.Errorf("add column %s: %w", col, err)
+			}
+		}
+	}
+
+	// Migration 3: Create jira_snapshots table and index if not exists
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS jira_snapshots (
+			id          TEXT PRIMARY KEY,
+			plan_id     TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+			name        TEXT NOT NULL,
+			start_date  TEXT NOT NULL, -- YYYY-MM-DD
+			end_date    TEXT NOT NULL, -- YYYY-MM-DD
+			data        TEXT NOT NULL DEFAULT '{}', -- JSON blob
+			created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("create jira_snapshots table: %w", err)
+	}
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_jira_snapshots_plan_id ON jira_snapshots(plan_id)`)
+	if err != nil {
+		return fmt.Errorf("create index idx_jira_snapshots_plan_id: %w", err)
+	}
+
 	return nil
+}
+
+func (db *DB) getTableColumns(table string) ([]string, error) {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var columns []string
+	for rows.Next() {
+		var cid int
+		var name, dtype string
+		var notnull, pk int
+		var dflt any
+		if err := rows.Scan(&cid, &name, &dtype, &notnull, &dflt, &pk); err != nil {
+			return nil, err
+		}
+		columns = append(columns, name)
+	}
+	return columns, nil
 }
 
 func (db *DB) SeedRootUser() error {

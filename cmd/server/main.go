@@ -20,6 +20,7 @@ import (
 )
 
 func main() {
+	log.Println("Starting Scrumy server...")
 	dbPath := os.Getenv("SCRUMY_DB")
 	if dbPath == "" {
 		dbPath = "scrumy.db"
@@ -51,6 +52,7 @@ func main() {
 	plansH := &handlers.PlansHandler{DB: database, Auth: authH}
 	capacityH := &handlers.CapacityHandler{DB: database, Auth: authH}
 	presH := &handlers.PresentationsHandler{DB: database, Auth: authH}
+	jiraH := &handlers.JiraHandler{DB: database, Auth: authH}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(authH.Middleware)
@@ -69,6 +71,15 @@ func main() {
 		r.Delete("/plans/{planID}", plansH.Delete)
 		r.Post("/plans/{planID}/admins", plansH.AddAdmin)
 		r.Delete("/plans/{planID}/admins", plansH.RemoveAdmin)
+
+		// Jira Integration
+		r.Put("/plans/{planID}/jira/settings", jiraH.UpdateSettings)
+		r.Post("/plans/{planID}/jira/test-connection", jiraH.TestConnection)
+		r.Post("/plans/{planID}/jira/snapshots", jiraH.CreateSnapshot)
+		r.Get("/plans/{planID}/jira/snapshots", jiraH.ListSnapshots)
+		r.Get("/plans/{planID}/jira/snapshots/{snapshotID}", jiraH.GetSnapshot)
+		r.Post("/plans/{planID}/jira/snapshots/{snapshotID}/refresh", jiraH.RefreshSnapshot)
+		r.Delete("/plans/{planID}/jira/snapshots/{snapshotID}", jiraH.DeleteSnapshot)
 
 		// Capacity Plans
 		r.Get("/plans/{planID}/capacity", capacityH.List)

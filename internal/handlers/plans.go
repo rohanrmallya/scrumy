@@ -109,13 +109,18 @@ func (h *PlansHandler) GetByID(w http.ResponseWriter, r *http.Request, id string
 
 	var p models.Plan
 	var createdAt, updatedAt string
+	var jiraToken string
 	err := h.DB.QueryRow(`
 		SELECT p.id, p.name, p.created_at, p.updated_at,
 			(SELECT COUNT(*) FROM capacity_plans cp WHERE cp.plan_id = p.id),
 			(SELECT COUNT(*) FROM presentations pr WHERE pr.plan_id = p.id),
-			EXISTS(SELECT 1 FROM plan_admins pa WHERE pa.plan_id = p.id AND pa.user_id = ?)
+			EXISTS(SELECT 1 FROM plan_admins pa WHERE pa.plan_id = p.id AND pa.user_id = ?),
+			p.jira_url, p.jira_user, p.jira_token, p.jira_jql, p.jira_sp_field
 		FROM plans p WHERE p.id = ?
-	`, userID, id).Scan(&p.ID, &p.Name, &createdAt, &updatedAt, &p.CapacityPlanCount, &p.PresentationCount, &p.IsAdmin)
+	`, userID, id).Scan(
+		&p.ID, &p.Name, &createdAt, &updatedAt, &p.CapacityPlanCount, &p.PresentationCount, &p.IsAdmin,
+		&p.JiraURL, &p.JiraUser, &jiraToken, &p.JiraJQL, &p.JiraSPField,
+	)
 	if err == sql.ErrNoRows {
 		respondErr(w, 404, "plan not found")
 		return
@@ -126,6 +131,8 @@ func (h *PlansHandler) GetByID(w http.ResponseWriter, r *http.Request, id string
 	}
 	p.CreatedAt, _ = time.Parse("2006-01-02T15:04:05Z", createdAt)
 	p.UpdatedAt, _ = time.Parse("2006-01-02T15:04:05Z", updatedAt)
+	p.JiraTokenSet = (jiraToken != "")
+	p.JiraToken = ""
 
 	// Load admins
 	adminRows, err := h.DB.Query(`

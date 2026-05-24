@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { api, type Presentation, type IntroContent, type RetroContent, type PreviousData, type Epic, type Learning, type Change, type Contributor } from '$lib/api';
+  import { api, type Presentation, type IntroContent, type RetroContent, type PreviousData, type Epic, type Learning, type Change, type Contributor, type JiraSnapshot } from '$lib/api';
 
   const planID = $derived($page.params.id);
   const presID = $derived($page.params.presid);
@@ -30,9 +30,21 @@
   let templateID = $state('default');
   let sprintName = $state('');
 
+  // Jira Snapshot import state
+  let snapshots = $state<JiraSnapshot[]>([]);
+  let selectedSnapshotID = $state('');
+
   onMount(async () => {
     try {
-      pres = await api.presentations.get(planID, presID);
+      // Load both presentation details and plan snapshots
+      const [pRes, sRes] = await Promise.all([
+        api.presentations.get(planID, presID),
+        api.jira.listSnapshots(planID)
+      ]);
+      
+      pres = pRes;
+      snapshots = sRes;
+
       title = pres.title;
       templateID = pres.template_id || 'default';
       sprintName = pres.sprint_name;
@@ -63,6 +75,36 @@
     } catch (e: any) { error = e.message; }
     finally { loading = false; }
   });
+
+  async function importSnapshot() {
+    if (!selectedSnapshotID) return;
+    try {
+      const snap = await api.jira.getSnapshot(planID, selectedSnapshotID);
+      prevData = {
+        total_sp_delivered: snap.data.totals.total_story_points,
+        total_hours_logged: snap.data.totals.total_hours_logged,
+        total_work_logs: snap.data.totals.total_work_logs,
+        avg_hours_per_sp: snap.data.totals.avg_hours_per_sp,
+        planned_sp: prevData.planned_sp,
+        executed_sp: snap.data.totals.total_story_points,
+        spillovers: prevData.spillovers,
+        total_epics_delivered: prevData.total_epics_delivered,
+      };
+
+      if (snap.data.leaderboard && snap.data.leaderboard.length > 0) {
+        if (confirm("Would you like to import authors from the Jira leaderboard as contributors?")) {
+          contributors = snap.data.leaderboard.map(entry => ({
+            name: entry.author_name,
+            contribution: `Logged ${entry.hours_logged.toFixed(1)} hrs`
+          }));
+        }
+      }
+
+      alert('Jira snapshot data imported successfully!');
+    } catch (e: any) {
+      alert(`Import failed: ${e.message}`);
+    }
+  }
 
   async function save() {
     saving = true;
@@ -182,8 +224,21 @@
 
   <!-- Data from previous sprint -->
   <div class="card">
-    <div class="card-header">
+    <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
       <div class="flex items-center gap-2"><span style="font-size:18px;">📊</span><h2 class="font-semibold">Data from previous sprint</h2></div>
+      
+      {#if snapshots.length > 0}
+        <div class="flex items-center gap-2" style="font-size:13px; font-weight:normal; text-transform:none; letter-spacing:0;">
+          <span style="color:var(--c-text-3);">Import:</span>
+          <select class="input" style="padding:4px 8px; font-size:12px; width:180px; height:auto;" bind:value={selectedSnapshotID}>
+            <option value="">-- Select Jira Snapshot --</option>
+            {#each snapshots as s}
+              <option value={s.id}>{s.name}</option>
+            {/each}
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick={importSnapshot} disabled={!selectedSnapshotID} style="padding:4px 10px;">Import</button>
+        </div>
+      {/if}
     </div>
     <div class="card-body" style="display:flex;flex-direction:column;gap:16px;">
       <div class="grid-3">

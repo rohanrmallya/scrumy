@@ -1,11 +1,29 @@
 -- Scrumy Database Schema
 
 CREATE TABLE IF NOT EXISTS plans (
-    id         TEXT PRIMARY KEY,
-    name       TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    jira_url      TEXT NOT NULL DEFAULT '',
+    jira_user     TEXT NOT NULL DEFAULT '',
+    jira_token    TEXT NOT NULL DEFAULT '',
+    jira_jql      TEXT NOT NULL DEFAULT '',
+    jira_sp_field TEXT NOT NULL DEFAULT '',
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS jira_snapshots (
+    id          TEXT PRIMARY KEY,
+    plan_id     TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    start_date  TEXT NOT NULL, -- YYYY-MM-DD
+    end_date    TEXT NOT NULL, -- YYYY-MM-DD
+    data        TEXT NOT NULL DEFAULT '{}', -- JSON blob
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_jira_snapshots_plan_id ON jira_snapshots(plan_id);
 
 CREATE TABLE IF NOT EXISTS capacity_plans (
     id                  TEXT PRIMARY KEY,

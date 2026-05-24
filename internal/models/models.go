@@ -12,6 +12,53 @@ type Plan struct {
 	PresentationCount   int `json:"presentation_count,omitempty"`
 	Admins              []string `json:"admins,omitempty"` // List of user IDs who are admins
 	IsAdmin             bool     `json:"is_admin,omitempty"` // Whether the current requester is an admin
+
+	// Jira integration settings
+	JiraURL      string `json:"jira_url"`
+	JiraUser     string `json:"jira_user"`
+	JiraToken    string `json:"jira_token,omitempty"`
+	JiraJQL      string `json:"jira_jql"`
+	JiraSPField  string `json:"jira_sp_field"`
+	JiraTokenSet bool   `json:"jira_token_set"`
+}
+
+type JiraSnapshot struct {
+	ID        string    `json:"id"`
+	PlanID    string    `json:"plan_id"`
+	Name      string    `json:"name"`
+	StartDate string    `json:"start_date"` // YYYY-MM-DD
+	EndDate   string    `json:"end_date"`   // YYYY-MM-DD
+	Data      any       `json:"data"`       // parsed JiraSnapshotData (or raw JSON bytes)
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type JiraIssue struct {
+	Key                       string  `json:"key"`
+	Summary                   string  `json:"summary"`
+	Status                    string  `json:"status"`
+	StoryPoints               float64 `json:"story_points"`
+	TimeSpentHours            float64 `json:"time_spent_hours"`
+	StatusCategoryChangedDate string  `json:"status_category_changed_date"`
+}
+
+type JiraTotals struct {
+	TotalStoryPoints float64 `json:"total_story_points"`
+	TotalHoursLogged float64 `json:"total_hours_logged"`
+	TotalWorkLogs    int     `json:"total_work_logs"`
+	AvgHoursPerSP    float64 `json:"avg_hours_per_sp"`
+}
+
+type JiraLeaderboardEntry struct {
+	AuthorName  string  `json:"author_name"`
+	HoursLogged float64 `json:"hours_logged"`
+	Percentage  float64 `json:"percentage"`
+}
+
+type JiraSnapshotData struct {
+	Issues      []JiraIssue            `json:"issues"`
+	Totals      JiraTotals             `json:"totals"`
+	Leaderboard []JiraLeaderboardEntry `json:"leaderboard"`
 }
 
 type User struct {
