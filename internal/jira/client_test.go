@@ -128,3 +128,103 @@ func TestClient_FetchRetroData(t *testing.T) {
 		t.Errorf("expected Alice to have 5.0 hours logged, got %f", data.Leaderboard[0].HoursLogged)
 	}
 }
+
+func TestClient_InsecureTLS(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"accountId":"123"}`))
+	}))
+	defer server.Close()
+
+	clientDefault := NewClient(server.URL, "user@example.com", "token")
+	err := clientDefault.TestConnection()
+	if err == nil {
+		t.Fatal("expected connection to fail on self-signed cert, but got no error")
+	}
+
+	clientInsecure := NewClient(server.URL, "user@example.com", "token")
+	clientInsecure.Insecure = true
+	err = clientInsecure.TestConnection()
+	if err != nil {
+		t.Fatalf("expected no error with Insecure=true, got %v", err)
+	}
+}
+
+func TestClient_FetchRetroData_Pagination(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/rest/api/3/search/jql" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		calls++
+
+		q := r.URL.Query()
+		if calls == 1 {
+			if q.Get("nextPageToken") != "" {
+				t.Errorf("expected no nextPageToken on first call, got %s", q.Get("nextPageToken"))
+			}
+			resp := map[string]interface{}{
+				"nextPageToken": "token-1",
+				"issues": []map[string]interface{}{
+					{
+						"key": "PROJ-1",
+						"fields": map[string]interface{}{
+							"summary":                   "Task 1",
+							"statuscategorychangeddate": "2026-05-10T10:00:00.000Z",
+							"status": map[string]interface{}{
+								"name": "Done",
+							},
+						},
+					},
+				},
+			}
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(resp)
+		} else if calls == 2 {
+			if q.Get("nextPageToken") != "token-1" {
+				t.Errorf("expected nextPageToken=token-1 on second call, got %s", q.Get("nextPageToken"))
+			}
+			resp := map[string]interface{}{
+				"nextPageToken": "",
+				"issues": []map[string]interface{}{
+					{
+						"key": "PROJ-2",
+						"fields": map[string]interface{}{
+							"summary":                   "Task 2",
+							"statuscategorychangeddate": "2026-05-11T10:00:00.000Z",
+							"status": map[string]interface{}{
+								"name": "Done",
+							},
+						},
+					},
+				},
+			}
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(resp)
+		} else {
+			t.Errorf("unexpected call count: %d", calls)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "user", "token")
+	data, err := client.FetchRetroData("project = PROJ", "2026-05-01", "2026-05-15", "customfield_storypoints")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if calls != 2 {
+		t.Errorf("expected 2 page requests, got %d", calls)
+	}
+
+	if len(data.Issues) != 2 {
+		t.Fatalf("expected 2 issues fetched, got %d", len(data.Issues))
+	}
+
+	if data.Issues[0].Key != "PROJ-1" || data.Issues[1].Key != "PROJ-2" {
+		t.Errorf("fetched issues are incorrect: %+v", data.Issues)
+	}
+}
+

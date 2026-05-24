@@ -1,6 +1,7 @@
 package jira
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ type Client struct {
 	BaseURL  string
 	Username string
 	Token    string
+	Insecure bool
 }
 
 func NewClient(baseURL, username, token string) *Client {
@@ -44,7 +46,20 @@ func (c *Client) request(method, path string, query url.Values, body io.Reader) 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	var transport http.RoundTripper = http.DefaultTransport
+	if c.Insecure {
+		transport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}
+	}
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   15 * time.Second,
+	}
 	return client.Do(req)
 }
 
@@ -141,41 +156,42 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string) (*mod
 	finalJQL := fmt.Sprintf("(%s) AND statusCategoryChangedDate >= %s AND statusCategoryChangedDate <= \"%s 23:59\"", baseJQL, startStr, endStr)
 
 	var allIssues []jiraSearchIssue
-	startAt := 0
-	maxResults := 50
+	nextPageToken := ""
 
 	for {
 		q := url.Values{}
 		q.Set("jql", finalJQL)
-		q.Set("startAt", strconv.Itoa(startAt))
-		q.Set("maxResults", strconv.Itoa(maxResults))
+		q.Set("maxResults", "50")
+		if nextPageToken != "" {
+			q.Set("nextPageToken", nextPageToken)
+		}
 		q.Set("fields", fmt.Sprintf("summary,status,assignee,worklog,timespent,statuscategorychangeddate,%s", spField))
 
 		resp, err := c.request("GET", "/rest/api/3/search/jql", q, nil)
 		if err != nil {
 			return nil, err
 		}
-		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
 			return nil, fmt.Errorf("search failed with status %d: %s", resp.StatusCode, string(body))
 		}
 
 		var searchResp struct {
-			Issues     []jiraSearchIssue `json:"issues"`
-			Total      int               `json:"total"`
-			StartAt    int               `json:"startAt"`
-			MaxResults int               `json:"maxResults"`
+			Issues        []jiraSearchIssue `json:"issues"`
+			NextPageToken string            `json:"nextPageToken"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
-			return nil, err
+		decodeErr := json.NewDecoder(resp.Body).Decode(&searchResp)
+		resp.Body.Close()
+		if decodeErr != nil {
+			return nil, decodeErr
 		}
 
 		allIssues = append(allIssues, searchResp.Issues...)
-		if len(allIssues) >= searchResp.Total || len(searchResp.Issues) == 0 {
+		if searchResp.NextPageToken == "" || len(searchResp.Issues) == 0 {
 			break
 		}
-		startAt += len(searchResp.Issues)
+		nextPageToken = searchResp.NextPageToken
 	}
 
 	worklogFilteredHours := 0.0

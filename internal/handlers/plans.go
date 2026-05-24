@@ -115,11 +115,11 @@ func (h *PlansHandler) GetByID(w http.ResponseWriter, r *http.Request, id string
 			(SELECT COUNT(*) FROM capacity_plans cp WHERE cp.plan_id = p.id),
 			(SELECT COUNT(*) FROM presentations pr WHERE pr.plan_id = p.id),
 			EXISTS(SELECT 1 FROM plan_admins pa WHERE pa.plan_id = p.id AND pa.user_id = ?),
-			p.jira_url, p.jira_user, p.jira_token, p.jira_jql, p.jira_sp_field
+			p.jira_url, p.jira_user, p.jira_token, p.jira_jql, p.jira_sp_field, p.jira_insecure
 		FROM plans p WHERE p.id = ?
 	`, userID, id).Scan(
 		&p.ID, &p.Name, &createdAt, &updatedAt, &p.CapacityPlanCount, &p.PresentationCount, &p.IsAdmin,
-		&p.JiraURL, &p.JiraUser, &jiraToken, &p.JiraJQL, &p.JiraSPField,
+		&p.JiraURL, &p.JiraUser, &jiraToken, &p.JiraJQL, &p.JiraSPField, &p.JiraInsecure,
 	)
 	if err == sql.ErrNoRows {
 		respondErr(w, 404, "plan not found")

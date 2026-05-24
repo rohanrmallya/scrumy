@@ -82,6 +82,7 @@ func (db *DB) Migrate() error {
 		"jira_token":    "ALTER TABLE plans ADD COLUMN jira_token TEXT NOT NULL DEFAULT ''",
 		"jira_jql":      "ALTER TABLE plans ADD COLUMN jira_jql TEXT NOT NULL DEFAULT ''",
 		"jira_sp_field": "ALTER TABLE plans ADD COLUMN jira_sp_field TEXT NOT NULL DEFAULT ''",
+		"jira_insecure": "ALTER TABLE plans ADD COLUMN jira_insecure INTEGER NOT NULL DEFAULT 0",
 	}
 	for col, sqlStmt := range newCols {
 		found := false

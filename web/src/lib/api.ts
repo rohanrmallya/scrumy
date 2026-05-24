@@ -45,6 +45,7 @@ export interface Plan {
 	jira_jql?: string;
 	jira_sp_field?: string;
 	jira_token_set?: boolean;
+	jira_insecure?: boolean;
 }
 
 export interface CapacityPlan {
@@ -216,6 +217,7 @@ export interface JiraSettings {
 	jira_token?: string;
 	jira_jql: string;
 	jira_sp_field: string;
+	jira_insecure?: boolean;
 }
 
 // ─── API calls ────────────────────────────────────────────────────────────────

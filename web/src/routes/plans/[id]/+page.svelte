@@ -25,6 +25,7 @@
   let jiraToken = $state('');
   let jiraJQL = $state('');
   let jiraSPField = $state('');
+  let jiraInsecure = $state(false);
   let jiraTokenSet = $state(false);
   let testingConnection = $state(false);
   let testResult = $state<{ ok: boolean; message: string } | null>(null);
@@ -57,6 +58,7 @@
       jiraJQL = p.jira_jql || '';
       jiraSPField = p.jira_sp_field || '';
       jiraTokenSet = !!p.jira_token_set;
+      jiraInsecure = !!p.jira_insecure;
     } catch (e: any) {
       error = e.message;
     } finally {
@@ -86,6 +88,7 @@
         jira_url: jiraURL,
         jira_user: jiraUser,
         jira_token: jiraToken || undefined,
+        jira_insecure: jiraInsecure,
       });
       testResult = { ok: true, message: 'Connection successful!' };
     } catch (e: any) {
@@ -104,9 +107,11 @@
         jira_token: jiraToken ? jiraToken.trim() : undefined,
         jira_jql: jiraJQL.trim(),
         jira_sp_field: jiraSPField.trim(),
+        jira_insecure: jiraInsecure,
       });
       plan = await api.plans.get(planID);
       jiraTokenSet = !!plan.jira_token_set;
+      jiraInsecure = !!plan.jira_insecure;
       jiraToken = ''; // Reset input after saving
       alert('Jira settings saved successfully!');
     } catch (e: any) {
@@ -529,6 +534,10 @@
                 <label class="label" style="font-size:11px;">Story Points Field (Optional)</label>
                 <input class="input" bind:value={jiraSPField} placeholder="e.g. customfield_10016" disabled={!plan?.is_admin} />
                 <p class="text-xs text-muted" style="margin-top:2px; font-size:10px;">Left blank to auto-detect "Story Points"</p>
+              </div>
+              <div class="form-group flex items-center gap-2" style="margin-top: 4px;">
+                <input type="checkbox" id="jiraInsecure" bind:checked={jiraInsecure} disabled={!plan?.is_admin} />
+                <label for="jiraInsecure" class="label" style="font-size:11px; margin: 0; cursor: pointer;">Skip TLS Verification (Insecure)</label>
               </div>
 
               {#if plan?.is_admin}

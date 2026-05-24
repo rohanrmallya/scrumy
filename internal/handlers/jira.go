@@ -21,10 +21,11 @@ type JiraHandler struct {
 
 func (h *JiraHandler) getClientForPlan(planID string) (*jira.Client, string, string, error) {
 	var urlStr, user, token, jql, spField string
+	var insecure bool
 	err := h.DB.QueryRow(`
-		SELECT jira_url, jira_user, jira_token, jira_jql, jira_sp_field 
+		SELECT jira_url, jira_user, jira_token, jira_jql, jira_sp_field, jira_insecure 
 		FROM plans WHERE id = ?
-	`, planID).Scan(&urlStr, &user, &token, &jql, &spField)
+	`, planID).Scan(&urlStr, &user, &token, &jql, &spField, &insecure)
 	if err == sql.ErrNoRows {
 		return nil, "", "", fmt.Errorf("plan not found")
 	} else if err != nil {
@@ -33,7 +34,9 @@ func (h *JiraHandler) getClientForPlan(planID string) (*jira.Client, string, str
 	if urlStr == "" || user == "" || token == "" {
 		return nil, "", "", fmt.Errorf("Jira integration is not fully configured")
 	}
-	return jira.NewClient(urlStr, user, token), jql, spField, nil
+	client := jira.NewClient(urlStr, user, token)
+	client.Insecure = insecure
+	return client, jql, spField, nil
 }
 
 func (h *JiraHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -45,11 +48,12 @@ func (h *JiraHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		JiraURL     string `json:"jira_url"`
-		JiraUser    string `json:"jira_user"`
-		JiraToken   string `json:"jira_token"`
-		JiraJQL     string `json:"jira_jql"`
-		JiraSPField string `json:"jira_sp_field"`
+		JiraURL      string `json:"jira_url"`
+		JiraUser     string `json:"jira_user"`
+		JiraToken    string `json:"jira_token"`
+		JiraJQL      string `json:"jira_jql"`
+		JiraSPField  string `json:"jira_sp_field"`
+		JiraInsecure bool   `json:"jira_insecure"`
 	}
 	if err := decode(r, &body); err != nil {
 		respondErr(w, 400, "invalid body")
@@ -60,15 +64,15 @@ func (h *JiraHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if body.JiraToken == "" {
 		_, err = h.DB.Exec(`
 			UPDATE plans 
-			SET jira_url = ?, jira_user = ?, jira_jql = ?, jira_sp_field = ?, updated_at = CURRENT_TIMESTAMP
+			SET jira_url = ?, jira_user = ?, jira_jql = ?, jira_sp_field = ?, jira_insecure = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?
-		`, body.JiraURL, body.JiraUser, body.JiraJQL, body.JiraSPField, planID)
+		`, body.JiraURL, body.JiraUser, body.JiraJQL, body.JiraSPField, body.JiraInsecure, planID)
 	} else {
 		_, err = h.DB.Exec(`
 			UPDATE plans 
-			SET jira_url = ?, jira_user = ?, jira_token = ?, jira_jql = ?, jira_sp_field = ?, updated_at = CURRENT_TIMESTAMP
+			SET jira_url = ?, jira_user = ?, jira_token = ?, jira_jql = ?, jira_sp_field = ?, jira_insecure = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?
-		`, body.JiraURL, body.JiraUser, body.JiraToken, body.JiraJQL, body.JiraSPField, planID)
+		`, body.JiraURL, body.JiraUser, body.JiraToken, body.JiraJQL, body.JiraSPField, body.JiraInsecure, planID)
 	}
 	if err != nil {
 		respondErr(w, 500, err.Error())
@@ -87,9 +91,10 @@ func (h *JiraHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		JiraURL   string `json:"jira_url"`
-		JiraUser  string `json:"jira_user"`
-		JiraToken string `json:"jira_token"`
+		JiraURL      string `json:"jira_url"`
+		JiraUser     string `json:"jira_user"`
+		JiraToken    string `json:"jira_token"`
+		JiraInsecure bool   `json:"jira_insecure"`
 	}
 	_ = decode(r, &body)
 
@@ -110,6 +115,7 @@ func (h *JiraHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := jira.NewClient(body.JiraURL, body.JiraUser, body.JiraToken)
+	client.Insecure = body.JiraInsecure
 	if err := client.TestConnection(); err != nil {
 		respondErr(w, 400, err.Error())
 		return

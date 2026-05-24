@@ -20,6 +20,7 @@ type Plan struct {
 	JiraJQL      string `json:"jira_jql"`
 	JiraSPField  string `json:"jira_sp_field"`
 	JiraTokenSet bool   `json:"jira_token_set"`
+	JiraInsecure bool   `json:"jira_insecure"`
 }
 
 type JiraSnapshot struct {

@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS plans (
     jira_token    TEXT NOT NULL DEFAULT '',
     jira_jql      TEXT NOT NULL DEFAULT '',
     jira_sp_field TEXT NOT NULL DEFAULT '',
+    jira_insecure INTEGER NOT NULL DEFAULT 0,
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
