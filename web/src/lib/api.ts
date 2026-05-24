@@ -206,6 +206,7 @@ export interface JiraSnapshot {
 	name: string;
 	start_date: string;
 	end_date: string;
+	all_worklogs: boolean;
 	data: JiraSnapshotData;
 	created_at: string;
 	updated_at: string;
@@ -260,7 +261,7 @@ export const api = {
 	jira: {
 		saveSettings: (planID: string, settings: JiraSettings) => put<{ updated: boolean }>(`/plans/${planID}/jira/settings`, settings),
 		testConnection: (planID: string, settings: Partial<JiraSettings>) => post<{ ok: boolean }>(`/plans/${planID}/jira/test-connection`, settings),
-		createSnapshot: (planID: string, body: { name: string; start_date: string; end_date: string }) => post<JiraSnapshot>(`/plans/${planID}/jira/snapshots`, body),
+		createSnapshot: (planID: string, body: { name: string; start_date: string; end_date: string; all_worklogs: boolean }) => post<JiraSnapshot>(`/plans/${planID}/jira/snapshots`, body),
 		listSnapshots: (planID: string) => get<JiraSnapshot[]>(`/plans/${planID}/jira/snapshots`),
 		getSnapshot: (planID: string, id: string) => get<JiraSnapshot>(`/plans/${planID}/jira/snapshots/${id}`),
 		refreshSnapshot: (planID: string, id: string) => post<JiraSnapshot>(`/plans/${planID}/jira/snapshots/${id}/refresh`),

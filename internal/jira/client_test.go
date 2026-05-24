@@ -101,7 +101,7 @@ func TestClient_FetchRetroData(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, "user", "token")
-	data, err := client.FetchRetroData("project = PROJ", "2026-05-01", "2026-05-15", "customfield_storypoints")
+	data, err := client.FetchRetroData("project = PROJ", "2026-05-01", "2026-05-15", "customfield_storypoints", false)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -210,7 +210,7 @@ func TestClient_FetchRetroData_Pagination(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, "user", "token")
-	data, err := client.FetchRetroData("project = PROJ", "2026-05-01", "2026-05-15", "customfield_storypoints")
+	data, err := client.FetchRetroData("project = PROJ", "2026-05-01", "2026-05-15", "customfield_storypoints", false)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -227,4 +227,76 @@ func TestClient_FetchRetroData_Pagination(t *testing.T) {
 		t.Errorf("fetched issues are incorrect: %+v", data.Issues)
 	}
 }
+
+func TestClient_FetchRetroData_AllWorklogs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rest/api/3/search/jql" {
+			resp := struct {
+				Issues []map[string]interface{} `json:"issues"`
+				Total  int                      `json:"total"`
+			}{
+				Total: 1,
+				Issues: []map[string]interface{}{
+					{
+						"key": "PROJ-101",
+						"fields": map[string]interface{}{
+							"summary": "Sample Task",
+							"status": map[string]interface{}{
+								"name": "Done",
+								"statusCategory": map[string]interface{}{
+									"name": "Done",
+									"key":  "done",
+								},
+							},
+							"timespent":                 36000,
+							"statuscategorychangeddate": "2026-05-10T10:00:00.000Z",
+							"customfield_storypoints":   3.0,
+							"worklog": map[string]interface{}{
+								"total":      2,
+								"maxResults": 20,
+								"worklogs": []map[string]interface{}{
+									{
+										"author": map[string]interface{}{
+											"displayName": "Alice",
+										},
+										"timeSpentSeconds": 18000, // 5 hours
+										"started":          "2026-05-05T09:00:00.000Z", // inside range
+									},
+									{
+										"author": map[string]interface{}{
+											"displayName": "Bob",
+										},
+										"timeSpentSeconds": 7200, // 2 hours
+										"started":          "2026-04-28T09:00:00.000Z", // OUTSIDE range
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(resp)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "user", "token")
+	data, err := client.FetchRetroData("project = PROJ", "2026-05-01", "2026-05-15", "customfield_storypoints", true)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Total hours logged should be 7.0 (5.0 Alice + 2.0 Bob) because allWorklogs is true.
+	if data.Totals.TotalHoursLogged != 7.0 {
+		t.Errorf("expected 7.0 hours logged, got %f", data.Totals.TotalHoursLogged)
+	}
+
+	if len(data.Leaderboard) != 2 {
+		t.Fatalf("expected leaderboard to have 2 entries, got %d", len(data.Leaderboard))
+	}
+}
+
 

@@ -14,14 +14,15 @@ CREATE TABLE IF NOT EXISTS plans (
 );
 
 CREATE TABLE IF NOT EXISTS jira_snapshots (
-    id          TEXT PRIMARY KEY,
-    plan_id     TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    start_date  TEXT NOT NULL, -- YYYY-MM-DD
-    end_date    TEXT NOT NULL, -- YYYY-MM-DD
-    data        TEXT NOT NULL DEFAULT '{}', -- JSON blob
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    id            TEXT PRIMARY KEY,
+    plan_id       TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    start_date    TEXT NOT NULL, -- YYYY-MM-DD
+    end_date      TEXT NOT NULL, -- YYYY-MM-DD
+    all_worklogs  INTEGER NOT NULL DEFAULT 0,
+    data          TEXT NOT NULL DEFAULT '{}', -- JSON blob
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_jira_snapshots_plan_id ON jira_snapshots(plan_id);

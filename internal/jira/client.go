@@ -130,7 +130,7 @@ func (c *Client) FetchAllWorklogs(issueKey string) ([]jiraWorklog, error) {
 	return page.Worklogs, nil
 }
 
-func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string) (*models.JiraSnapshotData, error) {
+func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string, allWorklogs bool) (*models.JiraSnapshotData, error) {
 	startLoc, err := time.Parse("2006-01-02", startStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid start_date: %w", err)
@@ -253,8 +253,9 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string) (*mod
 			if err != nil {
 				continue
 			}
-			// Only count work logged strictly within start_date and end_date
-			if (wlTime.After(startLoc) || wlTime.Equal(startLoc)) && (wlTime.Before(endLoc) || wlTime.Equal(endLoc)) {
+			// Only count work logged strictly within start_date and end_date, unless allWorklogs is enabled
+			inDateRange := (wlTime.After(startLoc) || wlTime.Equal(startLoc)) && (wlTime.Before(endLoc) || wlTime.Equal(endLoc))
+			if allWorklogs || inDateRange {
 				hours := wl.TimeSpentSeconds / 3600.0
 				issueTimeSpentSeconds += wl.TimeSpentSeconds
 				worklogFilteredHours += hours

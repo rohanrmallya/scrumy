@@ -37,6 +37,7 @@
   let newSnapshotName = $state('');
   let newSnapshotStart = $state('');
   let newSnapshotEnd = $state('');
+  let newSnapshotAllWorklogs = $state(false);
   let creatingSnapshot = $state(false);
   let loadingSnapshotDetails = $state(false);
 
@@ -132,6 +133,7 @@
         name: newSnapshotName.trim(),
         start_date: newSnapshotStart,
         end_date: newSnapshotEnd,
+        all_worklogs: newSnapshotAllWorklogs,
       });
       snapshots = [snap, ...snapshots];
       selectedSnapshot = snap;
@@ -139,6 +141,7 @@
       newSnapshotName = '';
       newSnapshotStart = '';
       newSnapshotEnd = '';
+      newSnapshotAllWorklogs = false;
     } catch (e: any) {
       alert(`Failed to create snapshot: ${e.message}`);
     } finally {
@@ -602,6 +605,10 @@
                     <label class="label" style="font-size:10px;">End Date</label>
                     <input type="date" class="input" style="padding:4px; font-size:12px;" bind:value={newSnapshotEnd} />
                   </div>
+                  <div class="form-group flex items-center gap-2" style="margin-top: 4px; margin-bottom: 6px;">
+                    <input type="checkbox" id="newSnapshotAllWorklogs" bind:checked={newSnapshotAllWorklogs} />
+                    <label for="newSnapshotAllWorklogs" class="label" style="font-size:11px; margin: 0; cursor: pointer;">Include all worklogs (no date filter)</label>
+                  </div>
                   
                   <button class="btn btn-primary btn-sm" onclick={createSnapshot} disabled={creatingSnapshot} style="margin-top:6px; font-size:11px;">
                     {creatingSnapshot ? 'Fetching & Saving...' : '✓ Generate'}
@@ -642,7 +649,14 @@
             <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
               <div>
                 <h2 class="font-bold text-lg">{selectedSnapshot.name}</h2>
-                <p class="text-xs text-muted" style="margin-top:3px;">Analyzed: {selectedSnapshot.start_date} to {selectedSnapshot.end_date}</p>
+                <p class="text-xs text-muted" style="margin-top:3px; display:flex; align-items:center; gap:6px;">
+                  Analyzed: {selectedSnapshot.start_date} to {selectedSnapshot.end_date}
+                  {#if selectedSnapshot.all_worklogs}
+                    <span class="badge badge-warning" style="font-size:9px; padding:1px 6px; text-transform:none; font-weight:normal; letter-spacing:0;">all worklogs</span>
+                  {:else}
+                    <span class="badge badge-default" style="font-size:9px; padding:1px 6px; text-transform:none; font-weight:normal; letter-spacing:0;">filtered worklogs</span>
+                  {/if}
+                </p>
               </div>
               <div class="flex gap-2">
                 {#if plan?.is_admin}

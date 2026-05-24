@@ -133,9 +133,10 @@ func (h *JiraHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name      string `json:"name"`
-		StartDate string `json:"start_date"` // YYYY-MM-DD
-		EndDate   string `json:"end_date"`   // YYYY-MM-DD
+		Name        string `json:"name"`
+		StartDate   string `json:"start_date"` // YYYY-MM-DD
+		EndDate     string `json:"end_date"`   // YYYY-MM-DD
+		AllWorklogs bool   `json:"all_worklogs"`
 	}
 	if err := decode(r, &body); err != nil || body.Name == "" || body.StartDate == "" || body.EndDate == "" {
 		respondErr(w, 400, "name, start_date, and end_date are required")
@@ -148,7 +149,7 @@ func (h *JiraHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := client.FetchRetroData(jql, body.StartDate, body.EndDate, spField)
+	data, err := client.FetchRetroData(jql, body.StartDate, body.EndDate, spField, body.AllWorklogs)
 	if err != nil {
 		respondErr(w, 500, fmt.Sprintf("failed to fetch data from Jira: %v", err))
 		return
@@ -162,9 +163,9 @@ func (h *JiraHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 
 	id := uuid.NewString()
 	_, err = h.DB.Exec(`
-		INSERT INTO jira_snapshots (id, plan_id, name, start_date, end_date, data)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, id, planID, body.Name, body.StartDate, body.EndDate, string(jsonData))
+		INSERT INTO jira_snapshots (id, plan_id, name, start_date, end_date, all_worklogs, data)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, id, planID, body.Name, body.StartDate, body.EndDate, body.AllWorklogs, string(jsonData))
 	if err != nil {
 		respondErr(w, 500, err.Error())
 		return
@@ -177,7 +178,7 @@ func (h *JiraHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 	planID := chi.URLParam(r, "planID")
 
 	rows, err := h.DB.Query(`
-		SELECT id, plan_id, name, start_date, end_date, created_at, updated_at
+		SELECT id, plan_id, name, start_date, end_date, all_worklogs, created_at, updated_at
 		FROM jira_snapshots 
 		WHERE plan_id = ? 
 		ORDER BY created_at DESC
@@ -192,7 +193,7 @@ func (h *JiraHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var s models.JiraSnapshot
 		var createdAt, updatedAt string
-		err := rows.Scan(&s.ID, &s.PlanID, &s.Name, &s.StartDate, &s.EndDate, &createdAt, &updatedAt)
+		err := rows.Scan(&s.ID, &s.PlanID, &s.Name, &s.StartDate, &s.EndDate, &s.AllWorklogs, &createdAt, &updatedAt)
 		if err != nil {
 			respondErr(w, 500, err.Error())
 			return
@@ -218,10 +219,10 @@ func (h *JiraHandler) GetSnapshotByID(w http.ResponseWriter, r *http.Request, pl
 	var dataStr string
 	var createdAt, updatedAt string
 	err := h.DB.QueryRow(`
-		SELECT id, plan_id, name, start_date, end_date, data, created_at, updated_at
+		SELECT id, plan_id, name, start_date, end_date, all_worklogs, data, created_at, updated_at
 		FROM jira_snapshots 
 		WHERE id = ? AND plan_id = ?
-	`, id, planID).Scan(&s.ID, &s.PlanID, &s.Name, &s.StartDate, &s.EndDate, &dataStr, &createdAt, &updatedAt)
+	`, id, planID).Scan(&s.ID, &s.PlanID, &s.Name, &s.StartDate, &s.EndDate, &s.AllWorklogs, &dataStr, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		respondErr(w, 404, "snapshot not found")
 		return
@@ -252,10 +253,11 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var name, startDate, endDate string
+	var allWorklogs bool
 	err := h.DB.QueryRow(`
-		SELECT name, start_date, end_date FROM jira_snapshots 
+		SELECT name, start_date, end_date, all_worklogs FROM jira_snapshots 
 		WHERE id = ? AND plan_id = ?
-	`, id, planID).Scan(&name, &startDate, &endDate)
+	`, id, planID).Scan(&name, &startDate, &endDate, &allWorklogs)
 	if err == sql.ErrNoRows {
 		respondErr(w, 404, "snapshot not found")
 		return
@@ -270,7 +272,7 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := client.FetchRetroData(jql, startDate, endDate, spField)
+	data, err := client.FetchRetroData(jql, startDate, endDate, spField, allWorklogs)
 	if err != nil {
 		respondErr(w, 500, fmt.Sprintf("failed to refresh data from Jira: %v", err))
 		return

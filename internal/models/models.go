@@ -24,14 +24,15 @@ type Plan struct {
 }
 
 type JiraSnapshot struct {
-	ID        string    `json:"id"`
-	PlanID    string    `json:"plan_id"`
-	Name      string    `json:"name"`
-	StartDate string    `json:"start_date"` // YYYY-MM-DD
-	EndDate   string    `json:"end_date"`   // YYYY-MM-DD
-	Data      any       `json:"data"`       // parsed JiraSnapshotData (or raw JSON bytes)
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	PlanID      string    `json:"plan_id"`
+	Name        string    `json:"name"`
+	StartDate   string    `json:"start_date"` // YYYY-MM-DD
+	EndDate     string    `json:"end_date"`   // YYYY-MM-DD
+	AllWorklogs bool      `json:"all_worklogs"`
+	Data        any       `json:"data"`       // parsed JiraSnapshotData (or raw JSON bytes)
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type JiraIssue struct {

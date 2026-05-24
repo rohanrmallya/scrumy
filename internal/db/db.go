@@ -103,14 +103,15 @@ func (db *DB) Migrate() error {
 	// Migration 3: Create jira_snapshots table and index if not exists
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS jira_snapshots (
-			id          TEXT PRIMARY KEY,
-			plan_id     TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-			name        TEXT NOT NULL,
-			start_date  TEXT NOT NULL, -- YYYY-MM-DD
-			end_date    TEXT NOT NULL, -- YYYY-MM-DD
-			data        TEXT NOT NULL DEFAULT '{}', -- JSON blob
-			created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+			id            TEXT PRIMARY KEY,
+			plan_id       TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+			name          TEXT NOT NULL,
+			start_date    TEXT NOT NULL, -- YYYY-MM-DD
+			end_date      TEXT NOT NULL, -- YYYY-MM-DD
+			all_worklogs  INTEGER NOT NULL DEFAULT 0,
+			data          TEXT NOT NULL DEFAULT '{}', -- JSON blob
+			created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 		)
 	`)
 	if err != nil {
@@ -119,6 +120,26 @@ func (db *DB) Migrate() error {
 	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_jira_snapshots_plan_id ON jira_snapshots(plan_id)`)
 	if err != nil {
 		return fmt.Errorf("create index idx_jira_snapshots_plan_id: %w", err)
+	}
+
+	// Migration 4: Add all_worklogs to jira_snapshots if not exists
+	snapshotColumns, err := db.getTableColumns("jira_snapshots")
+	if err != nil {
+		return fmt.Errorf("get jira_snapshots columns: %w", err)
+	}
+	hasAllWorklogs := false
+	for _, c := range snapshotColumns {
+		if c == "all_worklogs" {
+			hasAllWorklogs = true
+			break
+		}
+	}
+	if !hasAllWorklogs {
+		log.Println("⚡ Migrating: adding all_worklogs to jira_snapshots table")
+		_, err = db.Exec("ALTER TABLE jira_snapshots ADD COLUMN all_worklogs INTEGER NOT NULL DEFAULT 0")
+		if err != nil {
+			return fmt.Errorf("add all_worklogs column: %w", err)
+		}
 	}
 
 	return nil
