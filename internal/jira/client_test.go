@@ -57,7 +57,7 @@ func TestClient_FetchRetroData(t *testing.T) {
 				Issues []map[string]interface{} `json:"issues"`
 				Total  int                      `json:"total"`
 			}{
-				Total: 1,
+				Total: 2,
 				Issues: []map[string]interface{}{
 					{
 						"key": "PROJ-101",
@@ -95,6 +95,27 @@ func TestClient_FetchRetroData(t *testing.T) {
 							},
 						},
 					},
+					{
+						"key": "PROJ-102",
+						"fields": map[string]interface{}{
+							"summary": "In Progress Task",
+							"status": map[string]interface{}{
+								"name": "In Progress",
+								"statusCategory": map[string]interface{}{
+									"name": "In Progress",
+									"key":  "indeterminate",
+								},
+							},
+							"timespent":                 0,
+							"statuscategorychangeddate": "2026-05-10T10:00:00.000Z",
+							"customfield_storypoints":   5.0,
+							"worklog": map[string]interface{}{
+								"total":      0,
+								"maxResults": 20,
+								"worklogs":   []map[string]interface{}{},
+							},
+						},
+					},
 				},
 			}
 			w.WriteHeader(http.StatusOK)
@@ -111,8 +132,17 @@ func TestClient_FetchRetroData(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
+	// Total story points should only count Done status categories (so only PROJ-101's 3.0 SP, not PROJ-102's 5.0 SP)
 	if data.Totals.TotalStoryPoints != 3.0 {
 		t.Errorf("expected 3.0 story points, got %f", data.Totals.TotalStoryPoints)
+	}
+
+	if len(data.Issues) != 2 {
+		t.Fatalf("expected 2 issues in snapshot data, got %d", len(data.Issues))
+	}
+
+	if data.Issues[1].Key != "PROJ-102" || data.Issues[1].StoryPoints != 5.0 {
+		t.Errorf("expected PROJ-102 to retain its 5.0 SP, got %+v", data.Issues[1])
 	}
 
 	// Bob should be filtered out because his worklog was dated April 28, which is outside the May 1–15 range.
