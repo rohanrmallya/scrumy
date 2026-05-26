@@ -233,7 +233,9 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string, allWo
 		if rawSP, ok := issue.RawFields[spField]; ok {
 			sp = getFloat64FromRaw(rawSP)
 		}
-		totalStoryPoints += sp
+		if strings.ToLower(status.Name) == "done" || strings.ToLower(status.StatusCategory.Key) == "done" || strings.ToLower(status.StatusCategory.Name) == "done" {
+			totalStoryPoints += sp
+		}
 
 		// Get all worklogs
 		var worklogs []jiraWorklog
