@@ -152,8 +152,8 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string, allWo
 		}
 	}
 
-	// Date-bound JQL query
-	finalJQL := fmt.Sprintf("(%s) AND statusCategoryChangedDate >= %s AND statusCategoryChangedDate <= \"%s 23:59\"", baseJQL, startStr, endStr)
+	// Date-bound JQL query that retrieves issues with status changes OR worklogs in the range
+	finalJQL := fmt.Sprintf("(%s) AND ((statusCategoryChangedDate >= %s AND statusCategoryChangedDate <= \"%s 23:59\") OR (worklogDate >= %s AND worklogDate <= %s))", baseJQL, startStr, endStr, startStr, endStr)
 
 	var allIssues []jiraSearchIssue
 	nextPageToken := ""
