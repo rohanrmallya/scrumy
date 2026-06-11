@@ -284,6 +284,7 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string, allWo
 			Key:                       issue.Key,
 			Summary:                   summary,
 			Status:                    status.Name,
+			StatusCategoryKey:         status.StatusCategory.Key,
 			StoryPoints:               sp,
 			TimeSpentHours:            issueTimeSpentSeconds / 3600.0,
 			StatusCategoryChangedDate: statusCategoryChangedDate,

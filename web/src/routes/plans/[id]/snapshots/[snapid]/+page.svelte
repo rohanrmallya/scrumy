@@ -36,8 +36,76 @@
 
   onMount(loadData);
 
+  let doneIssuesOnly = $state(false);
+
+  // Derived filtered snapshot totals and leaderboard based on whether we only want worklog data of done tasks
+  const computedData = $derived.by(() => {
+    if (!snapshot || !snapshot.data) return {
+      leaderboard: [],
+      totalHoursLogged: 0,
+      totalWorkLogs: 0,
+      avgHoursPerSP: 0
+    };
+
+    const issues = snapshot.data.issues || [];
+    const baseLeaderboard = snapshot.data.leaderboard || [];
+
+    // Create lookup map for issue category/status
+    const doneStatusMap: Record<string, boolean> = {};
+    for (const issue of issues) {
+      const isDone = (issue.status_category_key === 'done' || 
+                      issue.status?.toLowerCase() === 'done');
+      doneStatusMap[issue.key] = isDone;
+    }
+
+    if (!doneIssuesOnly) {
+      return {
+        leaderboard: baseLeaderboard,
+        totalHoursLogged: snapshot.data.totals.total_hours_logged,
+        totalWorkLogs: snapshot.data.totals.total_work_logs,
+        avgHoursPerSP: snapshot.data.totals.avg_hours_per_sp,
+      };
+    }
+
+    // Filtered leaderboard
+    let totalHoursLogged = 0;
+    let totalWorkLogs = 0;
+    const newLeaderboard = baseLeaderboard.map(entry => {
+      const filteredWorklogs = (entry.worklogs || []).filter(wl => doneStatusMap[wl.issue_key]);
+      const hoursLogged = filteredWorklogs.reduce((sum, wl) => sum + wl.hours_logged, 0);
+      
+      totalHoursLogged += hoursLogged;
+      totalWorkLogs += filteredWorklogs.length;
+
+      return {
+        ...entry,
+        hours_logged: hoursLogged,
+        worklogs: filteredWorklogs,
+      };
+    }).filter(entry => entry.hours_logged > 0);
+
+    // Re-calculate percentages
+    for (const entry of newLeaderboard) {
+      entry.percentage = totalHoursLogged > 0 ? (entry.hours_logged / totalHoursLogged) * 100 : 0;
+    }
+
+    // Sort leaderboard descending by hours
+    newLeaderboard.sort((a, b) => b.hours_logged - a.hours_logged);
+
+    // Re-calculate average hours per SP
+    const totalSP = snapshot.data.totals.total_story_points;
+    const avgHoursPerSP = totalSP > 0 ? totalHoursLogged / totalSP : 0;
+
+    return {
+      leaderboard: newLeaderboard,
+      totalHoursLogged: Math.round(totalHoursLogged * 100) / 100,
+      totalWorkLogs,
+      avgHoursPerSP: Math.round(avgHoursPerSP * 100) / 100,
+    };
+  });
+
   const filteredLeaderboard = $derived(
-    (snapshot?.data?.leaderboard || []).filter(entry =>
+    (computedData?.leaderboard || []).filter(entry =>
       entry.author_name.toLowerCase().includes(leaderboardSearchQuery.trim().toLowerCase())
     )
   );
@@ -84,9 +152,9 @@
       const content = {
         previous_data: {
           total_sp_delivered: snapshot.data.totals.total_story_points,
-          total_hours_logged: snapshot.data.totals.total_hours_logged,
-          total_work_logs: snapshot.data.totals.total_work_logs,
-          avg_hours_per_sp: snapshot.data.totals.avg_hours_per_sp,
+          total_hours_logged: computedData.totalHoursLogged,
+          total_work_logs: computedData.totalWorkLogs,
+          avg_hours_per_sp: computedData.avgHoursPerSP,
           planned_sp: 0,
           executed_sp: snapshot.data.totals.total_story_points,
           spillovers: 0,
@@ -175,15 +243,15 @@
         </div>
         <div style="background:var(--c-surface); padding:20px; border-radius:10px; border:1px solid var(--c-border); box-shadow:var(--shadow-sm);">
           <p class="text-xs text-muted font-semibold" style="text-transform:uppercase; letter-spacing:0.05em; font-size:10px;">Hours Logged</p>
-          <p class="text-3xl font-bold" style="margin-top:6px; color:var(--c-primary);">{snapshot.data.totals.total_hours_logged} <span class="text-sm font-normal text-muted">hrs</span></p>
+          <p class="text-3xl font-bold" style="margin-top:6px; color:var(--c-primary);">{computedData.totalHoursLogged} <span class="text-sm font-normal text-muted">hrs</span></p>
         </div>
         <div style="background:var(--c-surface); padding:20px; border-radius:10px; border:1px solid var(--c-border); box-shadow:var(--shadow-sm);">
           <p class="text-xs text-muted font-semibold" style="text-transform:uppercase; letter-spacing:0.05em; font-size:10px;">Worklogs Count</p>
-          <p class="text-3xl font-bold" style="margin-top:6px;">{snapshot.data.totals.total_work_logs}</p>
+          <p class="text-3xl font-bold" style="margin-top:6px;">{computedData.totalWorkLogs}</p>
         </div>
         <div style="background:var(--c-surface); padding:20px; border-radius:10px; border:1px solid var(--c-border); box-shadow:var(--shadow-sm);">
           <p class="text-xs text-muted font-semibold" style="text-transform:uppercase; letter-spacing:0.05em; font-size:10px;">Hours / SP</p>
-          <p class="text-3xl font-bold" style="margin-top:6px;">{snapshot.data.totals.avg_hours_per_sp} <span class="text-sm font-normal text-muted">avg</span></p>
+          <p class="text-3xl font-bold" style="margin-top:6px;">{computedData.avgHoursPerSP} <span class="text-sm font-normal text-muted">avg</span></p>
         </div>
       </div>
 
@@ -197,7 +265,13 @@
               <h2 class="font-semibold text-base" style="display:flex; align-items:center; gap:8px; margin:0;">
                 <span>🏆</span> Logged Hours Leaderboard
               </h2>
-              <span class="badge badge-primary">{filteredLeaderboard.length} Developers</span>
+              <div class="flex items-center gap-3">
+                <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; cursor:pointer; font-weight:normal; user-select:none; margin:0;">
+                  <input type="checkbox" bind:checked={doneIssuesOnly} />
+                  <span>Done Tasks Only</span>
+                </label>
+                <span class="badge badge-primary">{filteredLeaderboard.length} Developers</span>
+              </div>
             </div>
             
             <!-- Search bar inline -->

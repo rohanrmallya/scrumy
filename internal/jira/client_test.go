@@ -283,6 +283,11 @@ func TestClient_FetchRetroData_Pagination(t *testing.T) {
 func TestClient_FetchRetroData_AllWorklogs(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/rest/api/3/search/jql" {
+			jql := r.URL.Query().Get("jql")
+			expectedJQL := `(project = PROJ) AND ((statusCategoryChangedDate >= 2026-05-01 AND statusCategoryChangedDate <= "2026-05-15 23:59") OR (worklogDate >= 2026-05-01 AND worklogDate <= 2026-05-15))`
+			if jql != expectedJQL {
+				t.Errorf("expected JQL query %q, got %q", expectedJQL, jql)
+			}
 			resp := struct {
 				Issues []map[string]interface{} `json:"issues"`
 				Total  int                      `json:"total"`

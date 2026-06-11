@@ -39,6 +39,7 @@ type JiraIssue struct {
 	Key                       string  `json:"key"`
 	Summary                   string  `json:"summary"`
 	Status                    string  `json:"status"`
+	StatusCategoryKey         string  `json:"status_category_key"`
 	StoryPoints               float64 `json:"story_points"`
 	TimeSpentHours            float64 `json:"time_spent_hours"`
 	StatusCategoryChangedDate string  `json:"status_category_changed_date"`

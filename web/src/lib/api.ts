@@ -176,6 +176,7 @@ export interface JiraIssue {
 	key: string;
 	summary: string;
 	status: string;
+	status_category_key?: string;
 	story_points: number;
 	time_spent_hours: number;
 	status_category_changed_date: string;
