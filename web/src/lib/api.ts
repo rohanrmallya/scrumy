@@ -179,6 +179,7 @@ export interface JiraIssue {
 	status_category_key?: string;
 	story_points: number;
 	time_spent_hours: number;
+	time_spent_hours_all?: number;
 	status_category_changed_date: string;
 }
 
@@ -206,6 +207,8 @@ export interface JiraSnapshotData {
 	issues: JiraIssue[];
 	totals: JiraTotals;
 	leaderboard: JiraLeaderboardEntry[];
+	totals_all?: JiraTotals;
+	leaderboard_all?: JiraLeaderboardEntry[];
 }
 
 export interface JiraSnapshot {

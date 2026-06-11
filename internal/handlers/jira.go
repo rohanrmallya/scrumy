@@ -149,7 +149,7 @@ func (h *JiraHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := client.FetchRetroData(jql, body.StartDate, body.EndDate, spField, body.AllWorklogs)
+	data, err := client.FetchRetroData(jql, body.StartDate, body.EndDate, spField)
 	if err != nil {
 		respondErr(w, 500, fmt.Sprintf("failed to fetch data from Jira: %v", err))
 		return
@@ -272,7 +272,7 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := client.FetchRetroData(jql, startDate, endDate, spField, allWorklogs)
+	data, err := client.FetchRetroData(jql, startDate, endDate, spField)
 	if err != nil {
 		respondErr(w, 500, fmt.Sprintf("failed to refresh data from Jira: %v", err))
 		return

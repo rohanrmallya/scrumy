@@ -36,7 +36,6 @@
   let newSnapshotName = $state('');
   let newSnapshotStart = $state('');
   let newSnapshotEnd = $state('');
-  let newSnapshotAllWorklogs = $state(false);
   let creatingSnapshot = $state(false);
 
   onMount(async () => {
@@ -130,15 +129,13 @@
       const snap = await api.jira.createSnapshot(planID, {
         name: newSnapshotName.trim(),
         start_date: newSnapshotStart,
-        end_date: newSnapshotEnd,
-        all_worklogs: newSnapshotAllWorklogs,
+        all_worklogs: false,
       });
       snapshots = [snap, ...snapshots];
       showCreateSnapshotForm = false;
       newSnapshotName = '';
       newSnapshotStart = '';
       newSnapshotEnd = '';
-      newSnapshotAllWorklogs = false;
       
       // Navigate to the dedicated snapshot page!
       goto(`/plans/${planID}/snapshots/${snap.id}`);
@@ -455,10 +452,7 @@
                   <label class="label" style="font-size:10px;">End Date</label>
                   <input type="date" class="input" style="padding:4px; font-size:12px;" bind:value={newSnapshotEnd} />
                 </div>
-                <div class="form-group flex items-center gap-2" style="margin-top: 4px; margin-bottom: 6px;">
-                  <input type="checkbox" id="newSnapshotAllWorklogs" bind:checked={newSnapshotAllWorklogs} />
-                  <label for="newSnapshotAllWorklogs" class="label" style="font-size:11px; margin: 0; cursor: pointer;">Include all worklogs (no date filter)</label>
-                </div>
+
                 
                 <button class="btn btn-primary btn-sm" onclick={createSnapshot} disabled={creatingSnapshot} style="margin-top:6px; font-size:11px; width: 100%;">
                   {creatingSnapshot ? 'Generating...' : '✓ Generate'}

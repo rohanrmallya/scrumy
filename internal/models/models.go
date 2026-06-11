@@ -42,6 +42,7 @@ type JiraIssue struct {
 	StatusCategoryKey         string  `json:"status_category_key"`
 	StoryPoints               float64 `json:"story_points"`
 	TimeSpentHours            float64 `json:"time_spent_hours"`
+	TimeSpentHoursAll         float64 `json:"time_spent_hours_all"`
 	StatusCategoryChangedDate string  `json:"status_category_changed_date"`
 }
 
@@ -66,9 +67,11 @@ type JiraLeaderboardEntry struct {
 }
 
 type JiraSnapshotData struct {
-	Issues      []JiraIssue            `json:"issues"`
-	Totals      JiraTotals             `json:"totals"`
-	Leaderboard []JiraLeaderboardEntry `json:"leaderboard"`
+	Issues         []JiraIssue            `json:"issues"`
+	Totals         JiraTotals             `json:"totals"`
+	Leaderboard    []JiraLeaderboardEntry `json:"leaderboard"`
+	TotalsAll      JiraTotals             `json:"totals_all"`
+	LeaderboardAll []JiraLeaderboardEntry `json:"leaderboard_all"`
 }
 
 type User struct {

@@ -17,6 +17,8 @@
   let refreshing = $state(false);
   let deleting = $state(false);
 
+  let showAllWorklogs = $state(false);
+
   async function loadData() {
     loading = true;
     error = '';
@@ -27,6 +29,9 @@
       ]);
       plan = p;
       snapshot = s;
+      if (s) {
+        showAllWorklogs = s.all_worklogs;
+      }
     } catch (e: any) {
       error = e.message;
     } finally {
@@ -48,7 +53,19 @@
     };
 
     const issues = snapshot.data.issues || [];
-    const baseLeaderboard = snapshot.data.leaderboard || [];
+    
+    // Choose correct source of totals & leaderboard based on showAllWorklogs toggle
+    // Support fallback to window metrics if totals_all or leaderboard_all is missing (for older snapshots)
+    const hasAllMetrics = !!snapshot.data.totals_all && !!snapshot.data.leaderboard_all;
+    const activeShowAll = showAllWorklogs && hasAllMetrics;
+
+    const baseLeaderboard = activeShowAll 
+      ? (snapshot.data.leaderboard_all || []) 
+      : (snapshot.data.leaderboard || []);
+      
+    const baseTotals = activeShowAll 
+      ? (snapshot.data.totals_all || snapshot.data.totals) 
+      : snapshot.data.totals;
 
     // Create lookup map for issue category/status
     const doneStatusMap: Record<string, boolean> = {};
@@ -61,9 +78,9 @@
     if (!doneIssuesOnly) {
       return {
         leaderboard: baseLeaderboard,
-        totalHoursLogged: snapshot.data.totals.total_hours_logged,
-        totalWorkLogs: snapshot.data.totals.total_work_logs,
-        avgHoursPerSP: snapshot.data.totals.avg_hours_per_sp,
+        totalHoursLogged: baseTotals.total_hours_logged,
+        totalWorkLogs: baseTotals.total_work_logs,
+        avgHoursPerSP: baseTotals.avg_hours_per_sp,
       };
     }
 
@@ -93,7 +110,7 @@
     newLeaderboard.sort((a, b) => b.hours_logged - a.hours_logged);
 
     // Re-calculate average hours per SP
-    const totalSP = snapshot.data.totals.total_story_points;
+    const totalSP = baseTotals.total_story_points;
     const avgHoursPerSP = totalSP > 0 ? totalHoursLogged / totalSP : 0;
 
     return {
@@ -116,6 +133,9 @@
     try {
       const updated = await api.jira.refreshSnapshot(planID, snapshotID);
       snapshot = updated;
+      if (updated) {
+        showAllWorklogs = updated.all_worklogs;
+      }
       leaderboardSearchQuery = '';
       expandedDevelopers = {};
       alert('Snapshot refreshed successfully!');
@@ -210,7 +230,7 @@
         <h1 class="text-2xl font-bold">{snapshot.name}</h1>
         <p class="text-xs text-muted" style="margin-top:4px; display:flex; align-items:center; gap:6px;">
           Range: {snapshot.start_date} to {snapshot.end_date}
-          {#if snapshot.all_worklogs}
+          {#if showAllWorklogs && snapshot.data.totals_all}
             <span class="badge badge-warning" style="font-size:9px; padding:1px 6px; text-transform:none; font-weight:normal; letter-spacing:0;">all worklogs</span>
           {:else}
             <span class="badge badge-default" style="font-size:9px; padding:1px 6px; text-transform:none; font-weight:normal; letter-spacing:0;">filtered worklogs</span>
@@ -265,7 +285,16 @@
               <h2 class="font-semibold text-base" style="display:flex; align-items:center; gap:8px; margin:0;">
                 <span>🏆</span> Logged Hours Leaderboard
               </h2>
-              <div class="flex items-center gap-3">
+              <div class="flex items-center gap-3" style="flex-wrap: wrap;">
+                <!-- Worklog Filter Switch -->
+                <label 
+                  style="display:inline-flex; align-items:center; gap:6px; font-size:12px; cursor:pointer; font-weight:normal; user-select:none; margin:0;"
+                  title={!snapshot.data.totals_all ? "Click Refresh to enable this toggle for older snapshots" : ""}
+                >
+                  <input type="checkbox" bind:checked={showAllWorklogs} disabled={!snapshot.data.totals_all} />
+                  <span>Include all worklogs (no date filter)</span>
+                </label>
+
                 <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; cursor:pointer; font-weight:normal; user-select:none; margin:0;">
                   <input type="checkbox" bind:checked={doneIssuesOnly} />
                   <span>Done Tasks Only</span>
@@ -445,7 +474,9 @@
                         <span class="badge badge-default" style="font-size:10px; padding:2px 6px;">{issue.status}</span>
                       </td>
                       <td style="padding:12px 16px; text-align:right; font-weight:500;">{issue.story_points > 0 ? issue.story_points : '—'}</td>
-                      <td style="padding:12px 16px; text-align:right; font-weight:500; color:var(--c-primary);">{issue.time_spent_hours.toFixed(1)} hrs</td>
+                      <td style="padding:12px 16px; text-align:right; font-weight:500; color:var(--c-primary);">
+                        {(showAllWorklogs && issue.time_spent_hours_all !== undefined ? issue.time_spent_hours_all : issue.time_spent_hours).toFixed(1)} hrs
+                      </td>
                     </tr>
                   {/each}
                 </tbody>

@@ -130,7 +130,7 @@ func (c *Client) FetchAllWorklogs(issueKey string) ([]jiraWorklog, error) {
 	return page.Worklogs, nil
 }
 
-func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string, allWorklogs bool) (*models.JiraSnapshotData, error) {
+func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string) (*models.JiraSnapshotData, error) {
 	startLoc, err := time.Parse("2006-01-02", startStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid start_date: %w", err)
@@ -194,10 +194,17 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string, allWo
 		nextPageToken = searchResp.NextPageToken
 	}
 
-	worklogFilteredHours := 0.0
-	worklogFilteredCount := 0
-	leaderboardMap := map[string]float64{}
-	authorWorklogsMap := map[string]map[string]float64{}
+	wlWindowHours := 0.0
+	wlWindowCount := 0
+	wlAllHours := 0.0
+	wlAllCount := 0
+
+	leaderboardMapWindow := map[string]float64{}
+	authorWorklogsMapWindow := map[string]map[string]float64{}
+
+	leaderboardMapAll := map[string]float64{}
+	authorWorklogsMapAll := map[string]map[string]float64{}
+
 	issueSummaries := map[string]string{}
 
 	var issues []models.JiraIssue
@@ -252,31 +259,40 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string, allWo
 			}
 		}
 
-		issueTimeSpentSeconds := 0.0
+		issueTimeSpentSecondsWindow := 0.0
+		issueTimeSpentSecondsAll := 0.0
 		for _, wl := range worklogs {
 			wlTime, err := parseJiraTime(wl.Started)
 			if err != nil {
 				continue
 			}
-			// Only count work logged strictly within start_date and end_date, unless allWorklogs is enabled
+			hours := wl.TimeSpentSeconds / 3600.0
+			author := wl.Author.DisplayName
+			if author == "" {
+				author = "Unknown"
+			}
+
+			// 1. Accumulate for ALL worklogs
+			issueTimeSpentSecondsAll += wl.TimeSpentSeconds
+			wlAllHours += hours
+			wlAllCount++
+			leaderboardMapAll[author] += hours
+			if _, ok := authorWorklogsMapAll[author]; !ok {
+				authorWorklogsMapAll[author] = map[string]float64{}
+			}
+			authorWorklogsMapAll[author][issue.Key] += hours
+
+			// 2. Accumulate for WINDOW worklogs (strictly within range)
 			inDateRange := (wlTime.After(startLoc) || wlTime.Equal(startLoc)) && (wlTime.Before(endLoc) || wlTime.Equal(endLoc))
-			if allWorklogs || inDateRange {
-				hours := wl.TimeSpentSeconds / 3600.0
-				issueTimeSpentSeconds += wl.TimeSpentSeconds
-				worklogFilteredHours += hours
-				worklogFilteredCount++
-
-				author := wl.Author.DisplayName
-				if author == "" {
-					author = "Unknown"
+			if inDateRange {
+				issueTimeSpentSecondsWindow += wl.TimeSpentSeconds
+				wlWindowHours += hours
+				wlWindowCount++
+				leaderboardMapWindow[author] += hours
+				if _, ok := authorWorklogsMapWindow[author]; !ok {
+					authorWorklogsMapWindow[author] = map[string]float64{}
 				}
-				leaderboardMap[author] += hours
-
-				// Track detailed worklogs per author per issue
-				if _, ok := authorWorklogsMap[author]; !ok {
-					authorWorklogsMap[author] = map[string]float64{}
-				}
-				authorWorklogsMap[author][issue.Key] += hours
+				authorWorklogsMapWindow[author][issue.Key] += hours
 			}
 		}
 
@@ -286,60 +302,78 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string, allWo
 			Status:                    status.Name,
 			StatusCategoryKey:         status.StatusCategory.Key,
 			StoryPoints:               sp,
-			TimeSpentHours:            issueTimeSpentSeconds / 3600.0,
+			TimeSpentHours:            issueTimeSpentSecondsWindow / 3600.0,
+			TimeSpentHoursAll:         issueTimeSpentSecondsAll / 3600.0,
 			StatusCategoryChangedDate: statusCategoryChangedDate,
 		})
 	}
 
-	var leaderboard []models.JiraLeaderboardEntry
-	for author, hours := range leaderboardMap {
-		pct := 0.0
-		if worklogFilteredHours > 0 {
-			pct = (hours / worklogFilteredHours) * 100.0
-		}
+	buildLeaderboard := func(leaderboardMap map[string]float64, authorWorklogsMap map[string]map[string]float64, totalHours float64) []models.JiraLeaderboardEntry {
+		var leaderboard []models.JiraLeaderboardEntry
+		for author, hours := range leaderboardMap {
+			pct := 0.0
+			if totalHours > 0 {
+				pct = (hours / totalHours) * 100.0
+			}
 
-		var items []models.JiraWorklogItem
-		for issueKey, loggedHours := range authorWorklogsMap[author] {
-			items = append(items, models.JiraWorklogItem{
-				IssueKey:     issueKey,
-				IssueSummary: issueSummaries[issueKey],
-				HoursLogged:  round2(loggedHours),
+			var items []models.JiraWorklogItem
+			for issueKey, loggedHours := range authorWorklogsMap[author] {
+				items = append(items, models.JiraWorklogItem{
+					IssueKey:     issueKey,
+					IssueSummary: issueSummaries[issueKey],
+					HoursLogged:  round2(loggedHours),
+				})
+			}
+			sort.Slice(items, func(i, j int) bool {
+				if items[i].HoursLogged == items[j].HoursLogged {
+					return items[i].IssueKey < items[j].IssueKey
+				}
+				return items[i].HoursLogged > items[j].HoursLogged
+			})
+
+			leaderboard = append(leaderboard, models.JiraLeaderboardEntry{
+				AuthorName:  author,
+				HoursLogged: round2(hours),
+				Percentage:  round2(pct),
+				Worklogs:    items,
 			})
 		}
-		sort.Slice(items, func(i, j int) bool {
-			if items[i].HoursLogged == items[j].HoursLogged {
-				return items[i].IssueKey < items[j].IssueKey
-			}
-			return items[i].HoursLogged > items[j].HoursLogged
-		})
 
-		leaderboard = append(leaderboard, models.JiraLeaderboardEntry{
-			AuthorName:  author,
-			HoursLogged: round2(hours),
-			Percentage:  round2(pct),
-			Worklogs:    items,
+		// Sort leaderboard descending by hours logged
+		sort.Slice(leaderboard, func(i, j int) bool {
+			return leaderboard[i].HoursLogged > leaderboard[j].HoursLogged
 		})
+		return leaderboard
 	}
 
-	// Sort leaderboard descending by hours logged
-	sort.Slice(leaderboard, func(i, j int) bool {
-		return leaderboard[i].HoursLogged > leaderboard[j].HoursLogged
-	})
+	leaderboardWindow := buildLeaderboard(leaderboardMapWindow, authorWorklogsMapWindow, wlWindowHours)
+	leaderboardAll := buildLeaderboard(leaderboardMapAll, authorWorklogsMapAll, wlAllHours)
 
-	avgHours := 0.0
+	avgHoursWindow := 0.0
 	if totalStoryPoints > 0 {
-		avgHours = worklogFilteredHours / totalStoryPoints
+		avgHoursWindow = wlWindowHours / totalStoryPoints
+	}
+	avgHoursAll := 0.0
+	if totalStoryPoints > 0 {
+		avgHoursAll = wlAllHours / totalStoryPoints
 	}
 
 	return &models.JiraSnapshotData{
 		Issues: issues,
 		Totals: models.JiraTotals{
 			TotalStoryPoints: round2(totalStoryPoints),
-			TotalHoursLogged: round2(worklogFilteredHours),
-			TotalWorkLogs:    worklogFilteredCount,
-			AvgHoursPerSP:    round2(avgHours),
+			TotalHoursLogged: round2(wlWindowHours),
+			TotalWorkLogs:    wlWindowCount,
+			AvgHoursPerSP:    round2(avgHoursWindow),
 		},
-		Leaderboard: leaderboard,
+		Leaderboard: leaderboardWindow,
+		TotalsAll: models.JiraTotals{
+			TotalStoryPoints: round2(totalStoryPoints),
+			TotalHoursLogged: round2(wlAllHours),
+			TotalWorkLogs:    wlAllCount,
+			AvgHoursPerSP:    round2(avgHoursAll),
+		},
+		LeaderboardAll: leaderboardAll,
 	}, nil
 }
 

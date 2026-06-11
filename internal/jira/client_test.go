@@ -127,7 +127,7 @@ func TestClient_FetchRetroData(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, "user", "token")
-	data, err := client.FetchRetroData("project = PROJ", "2026-05-01", "2026-05-15", "customfield_storypoints", false)
+	data, err := client.FetchRetroData("project = PROJ", "2026-05-01", "2026-05-15", "customfield_storypoints")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -145,14 +145,14 @@ func TestClient_FetchRetroData(t *testing.T) {
 		t.Errorf("expected PROJ-102 to retain its 5.0 SP, got %+v", data.Issues[1])
 	}
 
-	// Bob should be filtered out because his worklog was dated April 28, which is outside the May 1–15 range.
+	// Bob should be filtered out in the date-bounded "totals" because his worklog was dated April 28, which is outside the May 1–15 range.
 	// Total hours logged should be 5.0 (only Alice).
 	if data.Totals.TotalHoursLogged != 5.0 {
 		t.Errorf("expected 5.0 hours logged, got %f", data.Totals.TotalHoursLogged)
 	}
 
 	if len(data.Leaderboard) != 1 {
-		t.Fatalf("expected leaderboard to have 1 entry (Alice), got %d", len(data.Leaderboard))
+		t.Fatalf("expected window leaderboard to have 1 entry (Alice), got %d", len(data.Leaderboard))
 	}
 
 	if data.Leaderboard[0].AuthorName != "Alice" {
@@ -178,6 +178,23 @@ func TestClient_FetchRetroData(t *testing.T) {
 
 	if wlItem.HoursLogged != 5.0 {
 		t.Errorf("expected worklog hours logged 5.0, got %f", wlItem.HoursLogged)
+	}
+
+	// Verify all-time metrics are also computed correctly in the same snapshot
+	if data.TotalsAll.TotalHoursLogged != 7.0 {
+		t.Errorf("expected 7.0 all-time hours logged, got %f", data.TotalsAll.TotalHoursLogged)
+	}
+
+	if len(data.LeaderboardAll) != 2 {
+		t.Errorf("expected all-time leaderboard to have 2 entries, got %d", len(data.LeaderboardAll))
+	}
+
+	if data.Issues[0].TimeSpentHours != 5.0 {
+		t.Errorf("expected issue window time spent to be 5.0, got %f", data.Issues[0].TimeSpentHours)
+	}
+
+	if data.Issues[0].TimeSpentHoursAll != 7.0 {
+		t.Errorf("expected issue all time spent to be 7.0, got %f", data.Issues[0].TimeSpentHoursAll)
 	}
 }
 
@@ -262,7 +279,7 @@ func TestClient_FetchRetroData_Pagination(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, "user", "token")
-	data, err := client.FetchRetroData("project = PROJ", "2026-05-01", "2026-05-15", "customfield_storypoints", false)
+	data, err := client.FetchRetroData("project = PROJ", "2026-05-01", "2026-05-15", "customfield_storypoints")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -280,7 +297,7 @@ func TestClient_FetchRetroData_Pagination(t *testing.T) {
 	}
 }
 
-func TestClient_FetchRetroData_AllWorklogs(t *testing.T) {
+func TestClient_FetchRetroData_BothWorklogs(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/rest/api/3/search/jql" {
 			jql := r.URL.Query().Get("jql")
@@ -341,18 +358,27 @@ func TestClient_FetchRetroData_AllWorklogs(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, "user", "token")
-	data, err := client.FetchRetroData("project = PROJ", "2026-05-01", "2026-05-15", "customfield_storypoints", true)
+	data, err := client.FetchRetroData("project = PROJ", "2026-05-01", "2026-05-15", "customfield_storypoints")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	// Total hours logged should be 7.0 (5.0 Alice + 2.0 Bob) because allWorklogs is true.
-	if data.Totals.TotalHoursLogged != 7.0 {
-		t.Errorf("expected 7.0 hours logged, got %f", data.Totals.TotalHoursLogged)
+	// Total hours logged in window should be 5.0 (Alice).
+	if data.Totals.TotalHoursLogged != 5.0 {
+		t.Errorf("expected 5.0 hours logged in window, got %f", data.Totals.TotalHoursLogged)
 	}
 
-	if len(data.Leaderboard) != 2 {
-		t.Fatalf("expected leaderboard to have 2 entries, got %d", len(data.Leaderboard))
+	// Total hours logged all-time should be 7.0 (5.0 Alice + 2.0 Bob).
+	if data.TotalsAll.TotalHoursLogged != 7.0 {
+		t.Errorf("expected 7.0 hours logged all-time, got %f", data.TotalsAll.TotalHoursLogged)
+	}
+
+	if len(data.Leaderboard) != 1 {
+		t.Fatalf("expected window leaderboard to have 1 entry, got %d", len(data.Leaderboard))
+	}
+
+	if len(data.LeaderboardAll) != 2 {
+		t.Fatalf("expected all-time leaderboard to have 2 entries, got %d", len(data.LeaderboardAll))
 	}
 }
 
