@@ -1,0 +1,105 @@
+{
+  "issues": [
+    {
+      "key": "SCRUM-101",
+      "fields": {
+        "summary": "Implement authentication service backend",
+        "status": {
+          "name": "Done",
+          "statusCategory": {
+            "key": "done",
+            "name": "Done"
+          }
+        },
+        "timespent": 25200,
+        "statuscategorychangeddate": "2026-06-05T17:30:00.000Z",
+        "customfield_10016": 3.0,
+        "worklog": {
+          "total": 2,
+          "maxResults": 10,
+          "worklogs": [
+            {
+              "author": {
+                "displayName": "Alice Cooper"
+              },
+              "timeSpentSeconds": 18000,
+              "started": "2026-06-05T09:00:00.000Z"
+            },
+            {
+              "author": {
+                "displayName": "Bob Marley"
+              },
+              "timeSpentSeconds": 7200,
+              "started": "2026-05-25T14:00:00.000Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "key": "SCRUM-102",
+      "fields": {
+        "summary": "Create dashboard visualization components",
+        "status": {
+          "name": "In Progress",
+          "statusCategory": {
+            "key": "indeterminate",
+            "name": "In Progress"
+          }
+        },
+        "timespent": 14400,
+        "statuscategorychangeddate": "2026-06-08T11:00:00.000Z",
+        "customfield_10016": 5.0,
+        "worklog": {
+          "total": 1,
+          "maxResults": 10,
+          "worklogs": [
+            {
+              "author": {
+                "displayName": "Alice Cooper"
+              },
+              "timeSpentSeconds": 14400,
+              "started": "2026-06-08T10:00:00.000Z"
+              }
+          ]
+        }
+      }
+    },
+    {
+      "key": "SCRUM-103",
+      "fields": {
+        "summary": "Refactor database query optimization layer",
+        "status": {
+          "name": "Done",
+          "statusCategory": {
+            "key": "done",
+            "name": "Done"
+          }
+        },
+        "timespent": 46800,
+        "statuscategorychangeddate": "2026-06-10T16:45:00.000Z",
+        "customfield_10016": 8.0,
+        "worklog": {
+          "total": 2,
+          "maxResults": 10,
+          "worklogs": [
+            {
+              "author": {
+                "displayName": "Charlie Brown"
+              },
+              "timeSpentSeconds": 36000,
+              "started": "2026-06-10T09:00:00.000Z"
+            },
+            {
+              "author": {
+                "displayName": "Charlie Brown"
+              },
+              "timeSpentSeconds": 10800,
+              "started": "2026-05-20T11:00:00.000Z"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

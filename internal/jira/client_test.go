@@ -382,4 +382,48 @@ func TestClient_FetchRetroData_BothWorklogs(t *testing.T) {
 	}
 }
 
+func TestClient_MockMode(t *testing.T) {
+	client := NewClient("mock", "user", "token")
+	err := client.TestConnection()
+	if err != nil {
+		t.Fatalf("expected no error in mock mode connection, got %v", err)
+	}
+
+	spField, err := client.DetectStoryPointsField()
+	if err != nil {
+		t.Fatalf("expected no error detecting SP field in mock mode, got %v", err)
+	}
+	if spField != "customfield_10016" {
+		t.Errorf("expected customfield_10016, got %s", spField)
+	}
+
+	data, err := client.FetchRetroData("project = SCRUM", "2026-06-01", "2026-06-15", "customfield_10016")
+	if err != nil {
+		t.Fatalf("expected no error fetching retro data in mock mode, got %v", err)
+	}
+
+	// SCRUM-101 has 3 SP, SCRUM-103 has 8 SP. SCRUM-102 is In Progress, so SP delivered should be 11.0.
+	if data.Totals.TotalStoryPoints != 11.0 {
+		t.Errorf("expected 11.0 story points, got %f", data.Totals.TotalStoryPoints)
+	}
+
+	// In range (June 1-15):
+	// Alice Cooper: 5 hrs (SCRUM-101) + 4 hrs (SCRUM-102) = 9 hrs
+	// Charlie Brown: 10 hrs (SCRUM-103)
+	// Bob Marley: 0 hrs (outside range)
+	// Total window hours = 19.0
+	if data.Totals.TotalHoursLogged != 19.0 {
+		t.Errorf("expected 19.0 window hours, got %f", data.Totals.TotalHoursLogged)
+	}
+
+	// All-time:
+	// Alice Cooper: 9 hrs
+	// Charlie Brown: 13 hrs (10 + 3)
+	// Bob Marley: 2 hrs
+	// Total all-time hours = 24.0
+	if data.TotalsAll.TotalHoursLogged != 24.0 {
+		t.Errorf("expected 24.0 all-time hours, got %f", data.TotalsAll.TotalHoursLogged)
+	}
+}
+
 

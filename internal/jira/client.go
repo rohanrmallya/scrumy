@@ -1,12 +1,14 @@
 package jira
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"scrumy/internal/models"
 	"sort"
 	"strconv"
@@ -31,6 +33,9 @@ func NewClient(baseURL, username, token string) *Client {
 }
 
 func (c *Client) request(method, path string, query url.Values, body io.Reader) (*http.Response, error) {
+	if c.BaseURL == "mock" || strings.HasPrefix(c.BaseURL, "mock://") || c.BaseURL == "http://mock" || c.BaseURL == "https://mock" {
+		return c.mockRequest(method, path, query, body)
+	}
 	u, err := url.Parse(c.BaseURL + path)
 	if err != nil {
 		return nil, err
@@ -448,4 +453,85 @@ func parseJiraTime(tStr string) (time.Time, error) {
 
 func round2(v float64) float64 {
 	return float64(int(v*100+0.5)) / 100
+}
+
+func (c *Client) mockRequest(method, path string, query url.Values, body io.Reader) (*http.Response, error) {
+	var bodyBytes []byte
+	statusCode := http.StatusOK
+
+	mockFile := findMockFile()
+
+	if path == "/rest/api/3/myself" {
+		bodyBytes = []byte(`{"accountId":"mock-user","displayName":"Mock User"}`)
+	} else if path == "/rest/api/3/field" {
+		bodyBytes = []byte(`[{"id":"customfield_10016", "name":"Story Points"}]`)
+	} else if path == "/rest/api/3/search/jql" {
+		data, err := os.ReadFile(mockFile)
+		if err != nil {
+			bodyBytes = []byte(`{"issues":[]}`)
+		} else {
+			bodyBytes = data
+		}
+	} else if strings.HasPrefix(path, "/rest/api/3/issue/") && strings.HasSuffix(path, "/worklog") {
+		parts := strings.Split(path, "/")
+		issueKey := ""
+		if len(parts) >= 5 {
+			// e.g. ["", "rest", "api", "3", "issue", "SCRUM-101", "worklog"]
+			issueKey = parts[5]
+		}
+		bodyBytes = c.getMockWorklogsForIssue(issueKey)
+	} else {
+		statusCode = http.StatusNotFound
+		bodyBytes = []byte(`{"error":"Mock Endpoint Not Found"}`)
+	}
+
+	resp := &http.Response{
+		StatusCode:    statusCode,
+		Body:          io.NopCloser(bytes.NewReader(bodyBytes)),
+		Header:        make(http.Header),
+		ContentLength: int64(len(bodyBytes)),
+	}
+	resp.Header.Set("Content-Type", "application/json")
+	return resp, nil
+}
+
+func (c *Client) getMockWorklogsForIssue(issueKey string) []byte {
+	mockFile := findMockFile()
+	data, err := os.ReadFile(mockFile)
+	if err != nil {
+		return []byte(`{"total":0,"worklogs":[]}`)
+	}
+
+	var searchResp struct {
+		Issues []struct {
+			Key    string                     `json:"key"`
+			Fields map[string]json.RawMessage `json:"fields"`
+		} `json:"issues"`
+	}
+	if err := json.Unmarshal(data, &searchResp); err != nil {
+		return []byte(`{"total":0,"worklogs":[]}`)
+	}
+
+	for _, issue := range searchResp.Issues {
+		if issue.Key == issueKey {
+			if wlRaw, ok := issue.Fields["worklog"]; ok {
+				return wlRaw
+			}
+		}
+	}
+
+	return []byte(`{"total":0,"worklogs":[]}`)
+}
+
+func findMockFile() string {
+	if _, err := os.Stat("jira_mock.json"); err == nil {
+		return "jira_mock.json"
+	}
+	if _, err := os.Stat("../jira_mock.json"); err == nil {
+		return "../jira_mock.json"
+	}
+	if _, err := os.Stat("../../jira_mock.json"); err == nil {
+		return "../../jira_mock.json"
+	}
+	return "jira_mock.json"
 }
