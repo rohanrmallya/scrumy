@@ -197,6 +197,92 @@
       alert(`Failed to create presentation: ${e.message}`);
     }
   }
+
+  function exportToCSV() {
+    if (!snapshot || !computedData || !computedData.leaderboard) return;
+
+    // Create lookup map for issue details to enrich worklogs
+    const issueMap: Record<string, { story_points: number; status: string; status_changed: string }> = {};
+    if (snapshot.data.issues) {
+      for (const issue of snapshot.data.issues) {
+        issueMap[issue.key] = {
+          story_points: issue.story_points,
+          status: issue.status,
+          status_changed: issue.status_category_changed_date
+        };
+      }
+    }
+
+    // CSV Headers
+    const headers = [
+      'Developer',
+      'Issue Key',
+      'Issue Summary',
+      'Story Points',
+      'Issue Status',
+      'Status Changed Date',
+      'Logged Hours'
+    ];
+
+    const rows = [headers];
+
+    for (const entry of computedData.leaderboard) {
+      if (!entry.worklogs || entry.worklogs.length === 0) continue;
+      for (const wl of entry.worklogs) {
+        const issueDetails = issueMap[wl.issue_key] || { story_points: 0, status: 'Unknown', status_changed: '—' };
+        
+        let formattedDate = '—';
+        if (issueDetails.status_changed && issueDetails.status_changed !== '—') {
+          try {
+            formattedDate = issueDetails.status_changed.split('T')[0] || issueDetails.status_changed;
+          } catch {
+            formattedDate = issueDetails.status_changed;
+          }
+        }
+
+        rows.push([
+          entry.author_name,
+          wl.issue_key,
+          wl.issue_summary || '',
+          issueDetails.story_points > 0 ? issueDetails.story_points.toString() : '—',
+          issueDetails.status || '—',
+          formattedDate,
+          wl.hours_logged.toFixed(1)
+        ]);
+      }
+    }
+
+    // Helper to escape CSV cell values according to RFC 4180
+    const csvContent = rows
+      .map(row => 
+        row
+          .map(val => {
+            const escaped = val.replace(/"/g, '""');
+            // Check if wrapping is needed
+            if (escaped.includes(',') || escaped.includes('\n') || escaped.includes('\r') || escaped.includes('"')) {
+              return `"${escaped}"`;
+            }
+            return escaped;
+          })
+          .join(',')
+      )
+      .join('\r\n'); // Use Windows-style line breaks for maximum compatibility in Excel
+
+    // Create download link and trigger click
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' }); // Include UTF-8 BOM for Excel compatibility
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    
+    // Construct meaningful filename e.g. "scrumy_worklogs_sprint_name.csv"
+    const cleanedSnapshotName = snapshot.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    link.setAttribute('href', url);
+    link.setAttribute('download', `scrumy_worklogs_${cleanedSnapshotName}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
 </script>
 
 <svelte:head>
@@ -238,6 +324,9 @@
         </p>
       </div>
       <div class="flex gap-2">
+        <button class="btn btn-secondary btn-sm" onclick={exportToCSV} style="display:inline-flex; align-items:center; gap:6px;">
+          📥 Export to CSV
+        </button>
         {#if plan?.is_admin}
           <button class="btn btn-secondary btn-sm" onclick={refreshSnapshot} disabled={refreshing}>
             {refreshing ? 'Refreshing...' : '🔄 Refresh'}
