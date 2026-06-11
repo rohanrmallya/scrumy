@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { api, type IntroContent, type RetroContent, type PreviousData, type Epic } from '$lib/api';
+  import { api, type IntroContent, type RetroContent, type PreviousData, type Epic, type Contributor } from '$lib/api';
 
   const planID = $derived($page.params.id);
   const type = $derived(($page.url.searchParams.get('type') ?? 'intro') as 'intro' | 'retro');
@@ -13,6 +13,8 @@
   let error = $state('');
 
   // Intro content
+  interface Learning { title: string; content: string; tags: string[] }
+  interface Change { title: string; content: string; tags: string[] }
   let learnings = $state<Learning[]>([{ title: '', content: '', tags: [] }, { title: '', content: '', tags: [] }]);
   let changes = $state<Change[]>([{ title: '', content: '', tags: [] }]);
   let prevData = $state<PreviousData>({
@@ -22,6 +24,9 @@
   let epics = $state<Epic[]>([{
     id: '', title: '', summary: '', why_needed: '', when_doing: '', audience: '', total_sp: 0
   }]);
+
+  // Shared state
+  let contributors = $state<Contributor[]>([{ name: '', contribution: '' }]);
 
   // Retro content
   let retroFeedback = $state<string[]>(['', '']);
@@ -36,6 +41,8 @@
   function removeEpic(i: number) { epics = epics.filter((_, idx) => idx !== i); }
   function addFeedback() { retroFeedback = [...retroFeedback, '']; }
   function removeFeedback(i: number) { retroFeedback = retroFeedback.filter((_, idx) => idx !== i); }
+  function addContributor() { contributors = [...contributors, { name: '', contribution: '' }]; }
+  function removeContributor(i: number) { contributors = contributors.filter((_, idx) => idx !== i); }
 
   async function saveDraft() {
     if (!title.trim()) { error = 'Title is required'; return; }
@@ -53,13 +60,13 @@
             changes: changes.filter(c => c.content.trim() || c.title.trim()), 
             previous_data: prevData, 
             epics,
-            contributors: [],
+            contributors: contributors.filter(c => c.name.trim()),
             closing_text: ""
           } as IntroContent
         : { 
             previous_data: prevData, 
             feedback: retroFeedback.filter(Boolean),
-            contributors: [],
+            contributors: contributors.filter(c => c.name.trim()),
             closing_text: ""
           } as RetroContent;
       
@@ -126,6 +133,29 @@
         <label class="label" for="sprint-name">Sprint Name</label>
         <input id="sprint-name" class="input" bind:value={sprintName} placeholder="e.g. Sprint 24 – 25" />
       </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="flex items-center gap-2"><span style="font-size:18px;">👥</span><h2 class="font-semibold">Folks that contributed</h2></div>
+      <button class="btn btn-ghost btn-sm" onclick={addContributor}>+ Add Person</button>
+    </div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:12px;">
+      {#each contributors as c, i (i)}
+        <div class="flex gap-2 items-start">
+          <div class="grow grid-2" style="gap:10px;">
+            <input class="input" bind:value={contributors[i].name} placeholder="Name" />
+            <input class="input" bind:value={contributors[i].contribution} placeholder="Contribution (e.g. Developed API)" />
+          </div>
+          {#if contributors.length > 1}
+            <button class="btn-icon" style="color:var(--c-danger);margin-top:8px;" onclick={() => removeContributor(i)}>✕</button>
+          {/if}
+        </div>
+      {/each}
+      {#if contributors.length === 0 || (contributors.length === 1 && !contributors[0].name)}
+        <p class="text-muted" style="font-size:13px;text-align:center;padding:12px;">Slide will be skipped if no names are provided.</p>
+      {/if}
     </div>
   </div>
 

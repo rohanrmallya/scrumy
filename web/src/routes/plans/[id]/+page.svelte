@@ -129,6 +129,7 @@
       const snap = await api.jira.createSnapshot(planID, {
         name: newSnapshotName.trim(),
         start_date: newSnapshotStart,
+        end_date: newSnapshotEnd,
         all_worklogs: false,
       });
       snapshots = [snap, ...snapshots];
