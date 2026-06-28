@@ -294,7 +294,7 @@
                 {/if}
               </div>
             {:else}
-              {#each capacityPlans as cp (cp.id)}
+              {#each capacityPlans.slice(0, 3) as cp (cp.id)}
                 <a
                   href="/plans/{planID}/capacity/{cp.id}"
                   style="display:block; padding:16px 20px; border-bottom:1px solid var(--c-border); text-decoration:none; transition:background 150ms ease; cursor:pointer;"
@@ -320,6 +320,15 @@
                   <p class="text-xs text-muted">Updated {formatRelDate(cp.updated_at)}</p>
                 </a>
               {/each}
+              <div style="padding:12px; text-align:center;">
+                <a
+                  href="/plans/{planID}/capacity"
+                  class="btn btn-secondary btn-sm"
+                  style="display:flex; justify-content:center; width:100%;"
+                >
+                  View All Capacity Plans ({capacityPlans.length})
+                </a>
+              </div>
             {/if}
           </div>
         </div>
@@ -347,7 +356,7 @@
                 <p class="text-sm text-muted">No sprint intros yet.</p>
               {:else}
                 <div style="display:flex;flex-direction:column;gap:8px;">
-                  {#each intros as pres (pres.id)}
+                  {#each intros.slice(0, 3) as pres (pres.id)}
                     <div class="flex items-center justify-between" style="padding:10px 12px;background:var(--c-bg);border-radius:8px;">
                       <div class="flex items-center gap-3">
                         {#if pres.status === 'published'}
@@ -382,7 +391,7 @@
                 <p class="text-sm text-muted">No sprint retros yet.</p>
               {:else}
                 <div style="display:flex;flex-direction:column;gap:8px;">
-                  {#each retros as pres (pres.id)}
+                  {#each retros.slice(0, 3) as pres (pres.id)}
                     <div class="flex items-center justify-between" style="padding:10px 12px;background:var(--c-bg);border-radius:8px;">
                       <div class="flex items-center gap-3">
                         {#if pres.status === 'published'}
@@ -408,6 +417,17 @@
               {/if}
             </div>
           </div>
+          {#if presentations.length > 0}
+            <div style="padding:12px; text-align:center; border-top:1px solid var(--c-border);">
+              <a
+                href="/plans/{planID}/presentations"
+                class="btn btn-secondary btn-sm"
+                style="display:flex; justify-content:center; width:100%;"
+              >
+                View All Presentations ({presentations.length})
+              </a>
+            </div>
+          {/if}
         </div>
 
         <!-- Jira Snapshots -->
@@ -466,7 +486,7 @@
                 <p>No snapshots generated yet.</p>
               </div>
             {:else}
-              {#each snapshots as s (s.id)}
+              {#each snapshots.slice(0, 3) as s (s.id)}
                 <a
                   href="/plans/{planID}/snapshots/{s.id}"
                   style="display:block; padding:16px 20px; border-bottom:1px solid var(--c-border); text-decoration:none; transition:background 150ms ease; cursor:pointer;"
@@ -489,6 +509,15 @@
                   <p class="text-xs text-muted">{s.start_date} to {s.end_date}</p>
                 </a>
               {/each}
+              <div style="padding:12px; text-align:center;">
+                <a
+                  href="/plans/{planID}/snapshots"
+                  class="btn btn-secondary btn-sm"
+                  style="display:flex; justify-content:center; width:100%;"
+                >
+                  View All Snapshots ({snapshots.length})
+                </a>
+              </div>
             {/if}
           </div>
         </div>
