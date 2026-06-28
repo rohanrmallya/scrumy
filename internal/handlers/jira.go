@@ -319,3 +319,82 @@ func (h *JiraHandler) DeleteSnapshot(w http.ResponseWriter, r *http.Request) {
 
 	respond(w, 200, map[string]bool{"deleted": true})
 }
+
+func (h *JiraHandler) UpdateSnapshot(w http.ResponseWriter, r *http.Request) {
+	planID := chi.URLParam(r, "planID")
+	id := chi.URLParam(r, "snapshotID")
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil || !h.Auth.IsPlanAdmin(user.ID, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	var body struct {
+		Name      string `json:"name"`
+		StartDate string `json:"start_date"`
+		EndDate   string `json:"end_date"`
+	}
+	if err := decode(r, &body); err != nil || body.Name == "" || body.StartDate == "" || body.EndDate == "" {
+		respondErr(w, 400, "name, start_date, and end_date are required")
+		return
+	}
+
+	var oldName, oldStartDate, oldEndDate string
+	var allWorklogs bool
+	err := h.DB.QueryRow(`
+		SELECT name, start_date, end_date, all_worklogs FROM jira_snapshots 
+		WHERE id = ? AND plan_id = ?
+	`, id, planID).Scan(&oldName, &oldStartDate, &oldEndDate, &allWorklogs)
+	if err == sql.ErrNoRows {
+		respondErr(w, 404, "snapshot not found")
+		return
+	} else if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+
+	var dataJson *string
+	if oldStartDate != body.StartDate || oldEndDate != body.EndDate {
+		client, jql, spField, err := h.getClientForPlan(planID)
+		if err != nil {
+			respondErr(w, 400, err.Error())
+			return
+		}
+
+		data, err := client.FetchRetroData(jql, body.StartDate, body.EndDate, spField)
+		if err != nil {
+			respondErr(w, 500, fmt.Sprintf("failed to fetch data from Jira: %v", err))
+			return
+		}
+
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			respondErr(w, 500, err.Error())
+			return
+		}
+		s := string(jsonData)
+		dataJson = &s
+	}
+
+	if dataJson != nil {
+		_, err = h.DB.Exec(`
+			UPDATE jira_snapshots 
+			SET name = ?, start_date = ?, end_date = ?, data = ?, updated_at = CURRENT_TIMESTAMP
+			WHERE id = ? AND plan_id = ?
+		`, body.Name, body.StartDate, body.EndDate, *dataJson, id, planID)
+	} else {
+		_, err = h.DB.Exec(`
+			UPDATE jira_snapshots 
+			SET name = ?, updated_at = CURRENT_TIMESTAMP
+			WHERE id = ? AND plan_id = ?
+		`, body.Name, id, planID)
+	}
+
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+
+	h.GetSnapshotByID(w, r, planID, id)
+}
+

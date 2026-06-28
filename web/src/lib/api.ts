@@ -275,6 +275,7 @@ export const api = {
 		createSnapshot: (planID: string, body: { name: string; start_date: string; end_date: string; all_worklogs: boolean }) => post<JiraSnapshot>(`/plans/${planID}/jira/snapshots`, body),
 		listSnapshots: (planID: string) => get<JiraSnapshot[]>(`/plans/${planID}/jira/snapshots`),
 		getSnapshot: (planID: string, id: string) => get<JiraSnapshot>(`/plans/${planID}/jira/snapshots/${id}`),
+		updateSnapshot: (planID: string, id: string, body: { name: string; start_date: string; end_date: string }) => put<JiraSnapshot>(`/plans/${planID}/jira/snapshots/${id}`, body),
 		refreshSnapshot: (planID: string, id: string) => post<JiraSnapshot>(`/plans/${planID}/jira/snapshots/${id}/refresh`),
 		deleteSnapshot: (planID: string, id: string) => del<{ deleted: boolean }>(`/plans/${planID}/jira/snapshots/${id}`),
 	},

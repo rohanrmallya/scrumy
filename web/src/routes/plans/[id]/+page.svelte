@@ -157,6 +157,46 @@
     }
   }
 
+  // Edit Snapshot Modal state
+  let activeEditSnapshot = $state<JiraSnapshot | null>(null);
+  let editSnapshotName = $state('');
+  let editSnapshotStart = $state('');
+  let editSnapshotEnd = $state('');
+  let updatingSnapshot = $state(false);
+  let editSnapshotError = $state('');
+
+  function openEditSnapshot(s: JiraSnapshot) {
+    activeEditSnapshot = s;
+    editSnapshotName = s.name;
+    editSnapshotStart = s.start_date;
+    editSnapshotEnd = s.end_date;
+    editSnapshotError = '';
+  }
+
+  async function saveEditedSnapshot() {
+    if (!activeEditSnapshot) return;
+    if (!editSnapshotName.trim() || !editSnapshotStart || !editSnapshotEnd) {
+      editSnapshotError = 'Name, start date, and end date are required';
+      return;
+    }
+    updatingSnapshot = true;
+    editSnapshotError = '';
+    try {
+      const updated = await api.jira.updateSnapshot(planID, activeEditSnapshot.id, {
+        name: editSnapshotName.trim(),
+        start_date: editSnapshotStart,
+        end_date: editSnapshotEnd,
+      });
+      snapshots = snapshots.map(s => s.id === updated.id ? updated : s);
+      activeEditSnapshot = null;
+    } catch (e: any) {
+      editSnapshotError = e.message;
+    } finally {
+      updatingSnapshot = false;
+    }
+  }
+
+
   function statusBadge(s: string) {
     if (s === 'active') return 'badge-success';
     if (s === 'archived') return 'badge-default';
@@ -498,12 +538,20 @@
                   <div class="flex justify-between items-center" style="margin-bottom:8px;">
                     <span class="font-semibold" style="font-size:14px; color:var(--c-primary);">{s.name}</span>
                     {#if plan?.is_admin}
-                      <button
-                        class="btn-icon"
-                        style="color:var(--c-danger); font-size:14px;"
-                        onclick={(e) => { e.preventDefault(); e.stopPropagation(); deleteSnapshot(s.id); }}
-                        title="Delete"
-                      >✕</button>
+                      <div class="flex items-center gap-1" style="display: flex; align-items: center; gap: 4px;">
+                        <button
+                          class="btn-icon"
+                          style="color:var(--c-primary); font-size:13px; display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; padding:0; border:none; background:transparent;"
+                          onclick={(e) => { e.preventDefault(); e.stopPropagation(); openEditSnapshot(s); }}
+                          title="Edit"
+                        >✎</button>
+                        <button
+                          class="btn-icon"
+                          style="color:var(--c-danger); font-size:13px; display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; padding:0; border:none; background:transparent;"
+                          onclick={(e) => { e.preventDefault(); e.stopPropagation(); deleteSnapshot(s.id); }}
+                          title="Delete"
+                        >✕</button>
+                      </div>
                     {/if}
                   </div>
                   <p class="text-xs text-muted">{s.start_date} to {s.end_date}</p>
@@ -603,6 +651,44 @@
         </div>
       </div>
     {/if}
+  {/if}
+  {#if activeEditSnapshot}
+    <div style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:1000; backdrop-filter:blur(4px); transition: opacity 0.2s ease;">
+      <div style="background:var(--c-surface); border:1px solid var(--c-border); border-radius:12px; width:480px; max-width:90%; padding:24px; box-shadow:var(--shadow-lg);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--c-border); padding-bottom:12px;">
+          <h3 class="font-semibold text-base" style="color:var(--c-primary); margin:0;">Edit Snapshot Settings</h3>
+          <button class="btn-icon" onclick={() => activeEditSnapshot = null} style="font-size:14px; width:28px; height:28px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; background:transparent;">✕</button>
+        </div>
+        
+        <div style="display:flex; flex-direction:column; gap:16px; margin-bottom:20px;">
+          <div class="form-group">
+            <label class="label" style="font-size:11px; margin-bottom:6px;">Snapshot Name</label>
+            <input class="input" style="padding:10px; font-size:13px;" bind:value={editSnapshotName} placeholder="e.g. Sprint 24 Retro" />
+          </div>
+          <div class="form-group">
+            <label class="label" style="font-size:11px; margin-bottom:6px;">Start Date</label>
+            <input type="date" class="input" style="padding:8px; font-size:13px;" bind:value={editSnapshotStart} />
+          </div>
+          <div class="form-group">
+            <label class="label" style="font-size:11px; margin-bottom:6px;">End Date</label>
+            <input type="date" class="input" style="padding:8px; font-size:13px;" bind:value={editSnapshotEnd} />
+          </div>
+        </div>
+
+        {#if editSnapshotError}
+          <div class="badge badge-danger" style="margin-bottom:16px; padding:10px; border-radius:6px; font-size:12px; text-transform:none; letter-spacing:0; text-align:center; display:block; font-weight:400;">
+            ⚠️ {editSnapshotError}
+          </div>
+        {/if}
+
+        <div style="display:flex; justify-content:flex-end; gap:12px; border-top:1px solid var(--c-border); padding-top:16px;">
+          <button class="btn btn-secondary" onclick={() => activeEditSnapshot = null} disabled={updatingSnapshot}>Cancel</button>
+          <button class="btn btn-primary" onclick={saveEditedSnapshot} disabled={updatingSnapshot}>
+            {updatingSnapshot ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
   {/if}
 </div>
 

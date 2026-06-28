@@ -78,6 +78,7 @@ func main() {
 		r.Post("/plans/{planID}/jira/snapshots", jiraH.CreateSnapshot)
 		r.Get("/plans/{planID}/jira/snapshots", jiraH.ListSnapshots)
 		r.Get("/plans/{planID}/jira/snapshots/{snapshotID}", jiraH.GetSnapshot)
+		r.Put("/plans/{planID}/jira/snapshots/{snapshotID}", jiraH.UpdateSnapshot)
 		r.Post("/plans/{planID}/jira/snapshots/{snapshotID}/refresh", jiraH.RefreshSnapshot)
 		r.Delete("/plans/{planID}/jira/snapshots/{snapshotID}", jiraH.DeleteSnapshot)
 
