@@ -127,6 +127,7 @@
         <select id="pres-template" class="input" bind:value={templateID}>
           <option value="default">Default (Dark/Modern)</option>
           <option value="minimalist">Minimalist (Light/Simple)</option>
+          <option value="fire">Fire (Dark)</option>
         </select>
       </div>
       <div class="form-group">
