@@ -70,8 +70,8 @@ func ComputeSummary(cp *models.CapacityPlan) models.CapacitySummary {
 		if cp.HoursPerSP > 0 {
 			targetSP = loaded * cp.ProductiveHours / cp.HoursPerSP
 		}
-		thin := loaded
-		stretch := net
+		thin := targetSP * 0.75
+		stretch := targetSP * 1.25
 
 		ss := models.SprintSummary{
 			SprintID:         sprint.ID,
