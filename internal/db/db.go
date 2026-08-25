@@ -142,6 +142,31 @@ func (db *DB) Migrate() error {
 		}
 	}
 
+	// Migration 5: Create jira_snapshot_refresh_logs table
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS jira_snapshot_refresh_logs (
+			id                  TEXT PRIMARY KEY,
+			snapshot_id         TEXT NOT NULL REFERENCES jira_snapshots(id) ON DELETE CASCADE,
+			refreshed_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+			prev_story_points   REAL NOT NULL,
+			new_story_points    REAL NOT NULL,
+			prev_hours_logged   REAL NOT NULL,
+			new_hours_logged    REAL NOT NULL,
+			prev_worklogs_count INTEGER NOT NULL,
+			new_worklogs_count  INTEGER NOT NULL,
+			prev_issues_count   INTEGER NOT NULL,
+			new_issues_count    INTEGER NOT NULL
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("create jira_snapshot_refresh_logs table: %w", err)
+	}
+
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_jira_snapshot_refresh_logs_snapshot_id ON jira_snapshot_refresh_logs(snapshot_id)`)
+	if err != nil {
+		return fmt.Errorf("create index idx_jira_snapshot_refresh_logs_snapshot_id: %w", err)
+	}
+
 	return nil
 }
 

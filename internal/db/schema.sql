@@ -111,3 +111,19 @@ CREATE INDEX IF NOT EXISTS idx_team_members_capacity_plan_id ON team_members(cap
 CREATE INDEX IF NOT EXISTS idx_sprints_capacity_plan_id ON sprints(capacity_plan_id);
 CREATE INDEX IF NOT EXISTS idx_sprint_leaves_sprint_id ON sprint_leaves(sprint_id);
 CREATE INDEX IF NOT EXISTS idx_presentations_plan_id ON presentations(plan_id);
+
+CREATE TABLE IF NOT EXISTS jira_snapshot_refresh_logs (
+    id                  TEXT PRIMARY KEY,
+    snapshot_id         TEXT NOT NULL REFERENCES jira_snapshots(id) ON DELETE CASCADE,
+    refreshed_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+    prev_story_points   REAL NOT NULL,
+    new_story_points    REAL NOT NULL,
+    prev_hours_logged   REAL NOT NULL,
+    new_hours_logged    REAL NOT NULL,
+    prev_worklogs_count INTEGER NOT NULL,
+    new_worklogs_count  INTEGER NOT NULL,
+    prev_issues_count   INTEGER NOT NULL,
+    new_issues_count    INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_jira_snapshot_refresh_logs_snapshot_id ON jira_snapshot_refresh_logs(snapshot_id);

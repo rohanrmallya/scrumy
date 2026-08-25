@@ -240,6 +240,45 @@ func (h *JiraHandler) GetSnapshotByID(w http.ResponseWriter, r *http.Request, pl
 		s.Data = map[string]any{}
 	}
 
+	rows, err := h.DB.Query(`
+		SELECT id, snapshot_id, prev_story_points, new_story_points,
+		       prev_hours_logged, new_hours_logged, prev_worklogs_count, new_worklogs_count,
+		       prev_issues_count, new_issues_count, refreshed_at
+		FROM jira_snapshot_refresh_logs
+		WHERE snapshot_id = ?
+		ORDER BY refreshed_at DESC
+	`, id)
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	var history []models.JiraSnapshotRefresh
+	for rows.Next() {
+		var hr models.JiraSnapshotRefresh
+		var refreshedAt string
+		err := rows.Scan(&hr.ID, &hr.SnapshotID, &hr.PrevStoryPoints, &hr.NewStoryPoints,
+			&hr.PrevHoursLogged, &hr.NewHoursLogged, &hr.PrevWorklogsCount, &hr.NewWorklogsCount,
+			&hr.PrevIssuesCount, &hr.NewIssuesCount, &refreshedAt)
+		if err != nil {
+			respondErr(w, 500, err.Error())
+			return
+		}
+		hr.RefreshedAt, _ = time.Parse("2006-01-02 15:04:05", refreshedAt)
+		if hr.RefreshedAt.IsZero() {
+			hr.RefreshedAt, _ = time.Parse(time.RFC3339, refreshedAt)
+		}
+		if hr.RefreshedAt.IsZero() {
+			hr.RefreshedAt, _ = time.Parse("2006-01-02T15:04:05Z", refreshedAt)
+		}
+		history = append(history, hr)
+	}
+	if history == nil {
+		history = []models.JiraSnapshotRefresh{}
+	}
+	s.RefreshHistory = history
+
 	respond(w, 200, s)
 }
 
@@ -252,18 +291,23 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var name, startDate, endDate string
+	var name, startDate, endDate, oldDataStr string
 	var allWorklogs bool
 	err := h.DB.QueryRow(`
-		SELECT name, start_date, end_date, all_worklogs FROM jira_snapshots 
+		SELECT name, start_date, end_date, all_worklogs, data FROM jira_snapshots 
 		WHERE id = ? AND plan_id = ?
-	`, id, planID).Scan(&name, &startDate, &endDate, &allWorklogs)
+	`, id, planID).Scan(&name, &startDate, &endDate, &allWorklogs, &oldDataStr)
 	if err == sql.ErrNoRows {
 		respondErr(w, 404, "snapshot not found")
 		return
 	} else if err != nil {
 		respondErr(w, 500, err.Error())
 		return
+	}
+
+	var oldData models.JiraSnapshotData
+	if oldDataStr != "" {
+		_ = json.Unmarshal([]byte(oldDataStr), &oldData)
 	}
 
 	client, jql, spField, err := h.getClientForPlan(planID)
@@ -284,12 +328,64 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.DB.Exec(`
+	// Calculate changes based on whether the snapshot is configured with all worklogs
+	var prevSP, newSP float64
+	var prevHours, newHours float64
+	var prevWorklogs, newWorklogs int
+
+	if allWorklogs {
+		prevSP = oldData.TotalsAll.TotalStoryPoints
+		prevHours = oldData.TotalsAll.TotalHoursLogged
+		prevWorklogs = oldData.TotalsAll.TotalWorkLogs
+
+		newSP = data.TotalsAll.TotalStoryPoints
+		newHours = data.TotalsAll.TotalHoursLogged
+		newWorklogs = data.TotalsAll.TotalWorkLogs
+	} else {
+		prevSP = oldData.Totals.TotalStoryPoints
+		prevHours = oldData.Totals.TotalHoursLogged
+		prevWorklogs = oldData.Totals.TotalWorkLogs
+
+		newSP = data.Totals.TotalStoryPoints
+		newHours = data.Totals.TotalHoursLogged
+		newWorklogs = data.Totals.TotalWorkLogs
+	}
+
+	prevIssues := len(oldData.Issues)
+	newIssues := len(data.Issues)
+
+	// Update snapshot and write history in a transaction
+	tx, err := h.DB.Begin()
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`
 		UPDATE jira_snapshots 
 		SET data = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ? AND plan_id = ?
 	`, string(jsonData), id, planID)
 	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+
+	refreshID := uuid.NewString()
+	_, err = tx.Exec(`
+		INSERT INTO jira_snapshot_refresh_logs (
+			id, snapshot_id, prev_story_points, new_story_points,
+			prev_hours_logged, new_hours_logged, prev_worklogs_count, new_worklogs_count,
+			prev_issues_count, new_issues_count, refreshed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+	`, refreshID, id, prevSP, newSP, prevHours, newHours, prevWorklogs, newWorklogs, prevIssues, newIssues)
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
 		respondErr(w, 500, err.Error())
 		return
 	}

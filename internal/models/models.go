@@ -24,15 +24,30 @@ type Plan struct {
 }
 
 type JiraSnapshot struct {
-	ID          string    `json:"id"`
-	PlanID      string    `json:"plan_id"`
-	Name        string    `json:"name"`
-	StartDate   string    `json:"start_date"` // YYYY-MM-DD
-	EndDate     string    `json:"end_date"`   // YYYY-MM-DD
-	AllWorklogs bool      `json:"all_worklogs"`
-	Data        any       `json:"data"`       // parsed JiraSnapshotData (or raw JSON bytes)
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID             string                `json:"id"`
+	PlanID         string                `json:"plan_id"`
+	Name           string                `json:"name"`
+	StartDate      string                `json:"start_date"` // YYYY-MM-DD
+	EndDate        string                `json:"end_date"`   // YYYY-MM-DD
+	AllWorklogs    bool                  `json:"all_worklogs"`
+	Data           any                   `json:"data"`       // parsed JiraSnapshotData (or raw JSON bytes)
+	CreatedAt      time.Time             `json:"created_at"`
+	UpdatedAt      time.Time             `json:"updated_at"`
+	RefreshHistory []JiraSnapshotRefresh `json:"refresh_history"`
+}
+
+type JiraSnapshotRefresh struct {
+	ID                string    `json:"id"`
+	SnapshotID        string    `json:"snapshot_id"`
+	RefreshedAt       time.Time `json:"refreshed_at"`
+	PrevStoryPoints   float64   `json:"prev_story_points"`
+	NewStoryPoints    float64   `json:"new_story_points"`
+	PrevHoursLogged   float64   `json:"prev_hours_logged"`
+	NewHoursLogged    float64   `json:"new_hours_logged"`
+	PrevWorklogsCount int       `json:"prev_worklogs_count"`
+	NewWorklogsCount  int       `json:"new_worklogs_count"`
+	PrevIssuesCount   int       `json:"prev_issues_count"`
+	NewIssuesCount    int       `json:"new_issues_count"`
 }
 
 type JiraIssue struct {

@@ -41,6 +41,23 @@
 
   onMount(loadData);
 
+  function formatDateTime(utcString: string) {
+    if (!utcString) return '—';
+    try {
+      const date = new Date(utcString);
+      if (isNaN(date.getTime())) return utcString;
+      return date.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return utcString;
+    }
+  }
+
   let doneIssuesOnly = $state(false);
 
   // Derived filtered snapshot totals and leaderboard based on whether we only want worklog data of done tasks
@@ -544,25 +561,119 @@
           </div>
         </div>
 
-        <!-- Info Insights card below or adjacent -->
-        <div style="background:var(--c-surface); border-radius:10px; padding:20px; border:1px solid var(--c-border); box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:12px;">
-          <h3 class="font-semibold text-sm" style="display:flex; align-items:center; gap:6px;">
-            <span>ℹ️</span> Snapshot Insights
-          </h3>
-          <p class="text-xs text-muted" style="line-height:1.6; margin:0;">
-            This analysis is generated dynamically by querying Jira Cloud. Sprints metrics include issues matching JQL that were set to a completed state category during the snapshot dates.
-          </p>
-          <p class="text-xs text-muted" style="line-height:1.6; margin:0;">
-            The leaderboard highlights time logs created <strong>strictly within the start/end dates</strong> of the snapshot on the retrieved issues.
-          </p>
-          <div style="border-top:1px solid var(--c-border); padding-top:12px; font-size:11px; display:flex; flex-direction:column; gap:8px;">
-            <div class="flex justify-between">
-              <span class="text-muted">Closed Issues count:</span>
-              <span class="font-semibold">{snapshot.data.issues?.length || 0}</span>
+        <!-- Right Column Panel (Insights & History) -->
+        <div style="display:flex; flex-direction:column; gap:24px;">
+          <!-- Info Insights card below or adjacent -->
+          <div style="background:var(--c-surface); border-radius:10px; padding:20px; border:1px solid var(--c-border); box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:12px;">
+            <h3 class="font-semibold text-sm" style="display:flex; align-items:center; gap:6px;">
+              <span>ℹ️</span> Snapshot Insights
+            </h3>
+            <p class="text-xs text-muted" style="line-height:1.6; margin:0;">
+              This analysis is generated dynamically by querying Jira Cloud. Sprints metrics include issues matching JQL that were set to a completed state category during the snapshot dates.
+            </p>
+            <p class="text-xs text-muted" style="line-height:1.6; margin:0;">
+              The leaderboard highlights time logs created <strong>strictly within the start/end dates</strong> of the snapshot on the retrieved issues.
+            </p>
+            <div style="border-top:1px solid var(--c-border); padding-top:12px; font-size:11px; display:flex; flex-direction:column; gap:8px;">
+              <div class="flex justify-between">
+                <span class="text-muted">Closed Issues count:</span>
+                <span class="font-semibold">{snapshot.data.issues?.length || 0}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-muted">Total story points delivered:</span>
+                <span class="font-semibold text-success">{snapshot.data.totals.total_story_points}</span>
+              </div>
             </div>
-            <div class="flex justify-between">
-              <span class="text-muted">Total story points delivered:</span>
-              <span class="font-semibold text-success">{snapshot.data.totals.total_story_points}</span>
+          </div>
+
+          <!-- Refresh History Card -->
+          <div class="card">
+            <div class="card-header" style="padding:16px 20px; border-bottom: 1px solid var(--c-border-2);">
+              <h3 class="font-semibold text-sm" style="margin:0; display:flex; align-items:center; gap:8px;">
+                <span>🔄</span> Refresh History
+              </h3>
+            </div>
+            <div class="card-body" style="padding: 16px 20px; display:flex; flex-direction:column; gap:16px; max-height:380px; overflow-y:auto; background:var(--c-bg);">
+              {#if !snapshot.refresh_history || snapshot.refresh_history.length === 0}
+                <p class="text-xs text-muted" style="text-align:center; padding:12px 0; margin:0;">No refreshes recorded yet.</p>
+              {:else}
+                <div style="display:flex; flex-direction:column; gap:16px;">
+                  {#each snapshot.refresh_history as log}
+                    {@const spDiff = log.new_story_points - log.prev_story_points}
+                    {@const hoursDiff = log.new_hours_logged - log.prev_hours_logged}
+                    {@const worklogsDiff = log.new_worklogs_count - log.prev_worklogs_count}
+                    {@const issuesDiff = log.new_issues_count - log.prev_issues_count}
+                    {@const hasChanges = spDiff !== 0 || hoursDiff !== 0 || worklogsDiff !== 0 || issuesDiff !== 0}
+
+                    <div style="background:var(--c-surface); border:1px solid var(--c-border); border-radius:8px; padding:14px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:10px;">
+                      <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span class="font-bold text-xs" style="color:var(--c-text);">{formatDateTime(log.refreshed_at)}</span>
+                        {#if hasChanges}
+                          <span class="badge badge-success" style="font-size:9px; padding:1px 6px;">Changes</span>
+                        {:else}
+                          <span class="badge badge-default" style="font-size:9px; padding:1px 6px; background:var(--c-surface-2); color:var(--c-text-3);">No changes</span>
+                        {/if}
+                      </div>
+
+                      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:11px; border-top:1px solid var(--c-border-2); padding-top:8px;">
+                        
+                        <!-- Story Points -->
+                        <div style="display:flex; flex-direction:column; gap:2px;">
+                          <span class="text-muted">Story Points:</span>
+                          <span style="font-weight:600; display:inline-flex; align-items:center; gap:4px;">
+                            {log.new_story_points} SP
+                            {#if spDiff > 0}
+                              <span style="color:var(--c-success); font-weight:700;">(+{spDiff.toFixed(1)})</span>
+                            {:else if spDiff < 0}
+                              <span style="color:var(--c-danger); font-weight:700;">({spDiff.toFixed(1)})</span>
+                            {/if}
+                          </span>
+                        </div>
+
+                        <!-- Logged Hours -->
+                        <div style="display:flex; flex-direction:column; gap:2px;">
+                          <span class="text-muted">Hours Logged:</span>
+                          <span style="font-weight:600; display:inline-flex; align-items:center; gap:4px;">
+                            {log.new_hours_logged.toFixed(1)} hrs
+                            {#if hoursDiff > 0}
+                              <span style="color:var(--c-success); font-weight:700;">(+{hoursDiff.toFixed(1)})</span>
+                            {:else if hoursDiff < 0}
+                              <span style="color:var(--c-danger); font-weight:700;">({hoursDiff.toFixed(1)})</span>
+                            {/if}
+                          </span>
+                        </div>
+
+                        <!-- Closed Issues -->
+                        <div style="display:flex; flex-direction:column; gap:2px;">
+                          <span class="text-muted">Issues Closed:</span>
+                          <span style="font-weight:600; display:inline-flex; align-items:center; gap:4px;">
+                            {log.new_issues_count}
+                            {#if issuesDiff > 0}
+                              <span style="color:var(--c-success); font-weight:700;">(+{issuesDiff})</span>
+                            {:else if issuesDiff < 0}
+                              <span style="color:var(--c-danger); font-weight:700;">({issuesDiff})</span>
+                            {/if}
+                          </span>
+                        </div>
+
+                        <!-- Worklogs count -->
+                        <div style="display:flex; flex-direction:column; gap:2px;">
+                          <span class="text-muted">Worklogs count:</span>
+                          <span style="font-weight:600; display:inline-flex; align-items:center; gap:4px;">
+                            {log.new_worklogs_count}
+                            {#if worklogsDiff > 0}
+                              <span style="color:var(--c-success); font-weight:700;">(+{worklogsDiff})</span>
+                            {:else if worklogsDiff < 0}
+                              <span style="color:var(--c-danger); font-weight:700;">({worklogsDiff})</span>
+                            {/if}
+                          </span>
+                        </div>
+
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
             </div>
           </div>
         </div>

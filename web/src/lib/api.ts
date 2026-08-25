@@ -211,6 +211,20 @@ export interface JiraSnapshotData {
 	leaderboard_all?: JiraLeaderboardEntry[];
 }
 
+export interface JiraSnapshotRefresh {
+	id: string;
+	snapshot_id: string;
+	refreshed_at: string;
+	prev_story_points: number;
+	new_story_points: number;
+	prev_hours_logged: number;
+	new_hours_logged: number;
+	prev_worklogs_count: number;
+	new_worklogs_count: number;
+	prev_issues_count: number;
+	new_issues_count: number;
+}
+
 export interface JiraSnapshot {
 	id: string;
 	plan_id: string;
@@ -221,6 +235,7 @@ export interface JiraSnapshot {
 	data: JiraSnapshotData;
 	created_at: string;
 	updated_at: string;
+	refresh_history?: JiraSnapshotRefresh[];
 }
 
 export interface JiraSettings {
