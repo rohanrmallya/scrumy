@@ -338,6 +338,21 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Preserve IsUnplanned from oldData for any matching issue keys
+	if len(oldData.Issues) > 0 {
+		unplannedMap := make(map[string]bool)
+		for _, iss := range oldData.Issues {
+			if iss.IsUnplanned {
+				unplannedMap[iss.Key] = true
+			}
+		}
+		for i := range data.Issues {
+			if unplannedMap[data.Issues[i].Key] {
+				data.Issues[i].IsUnplanned = true
+			}
+		}
+	}
+
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		respondErr(w, 500, err.Error())
@@ -464,18 +479,23 @@ func (h *JiraHandler) UpdateSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var oldName, oldStartDate, oldEndDate string
+	var oldName, oldStartDate, oldEndDate, oldDataStr string
 	var allWorklogs bool
 	err := h.DB.QueryRow(`
-		SELECT name, start_date, end_date, all_worklogs FROM jira_snapshots 
+		SELECT name, start_date, end_date, all_worklogs, data FROM jira_snapshots 
 		WHERE id = ? AND plan_id = ?
-	`, id, planID).Scan(&oldName, &oldStartDate, &oldEndDate, &allWorklogs)
+	`, id, planID).Scan(&oldName, &oldStartDate, &oldEndDate, &allWorklogs, &oldDataStr)
 	if err == sql.ErrNoRows {
 		respondErr(w, 404, "snapshot not found")
 		return
 	} else if err != nil {
 		respondErr(w, 500, err.Error())
 		return
+	}
+
+	var oldData models.JiraSnapshotData
+	if oldDataStr != "" {
+		_ = json.Unmarshal([]byte(oldDataStr), &oldData)
 	}
 
 	var dataJson *string
@@ -490,6 +510,21 @@ func (h *JiraHandler) UpdateSnapshot(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			respondErr(w, 500, fmt.Sprintf("failed to fetch data from Jira: %v", err))
 			return
+		}
+
+		// Preserve IsUnplanned
+		if len(oldData.Issues) > 0 {
+			unplannedMap := make(map[string]bool)
+			for _, iss := range oldData.Issues {
+				if iss.IsUnplanned {
+					unplannedMap[iss.Key] = true
+				}
+			}
+			for i := range data.Issues {
+				if unplannedMap[data.Issues[i].Key] {
+					data.Issues[i].IsUnplanned = true
+				}
+			}
 		}
 
 		jsonData, err := json.Marshal(data)
@@ -521,5 +556,70 @@ func (h *JiraHandler) UpdateSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.GetSnapshotByID(w, r, planID, id)
+}
+
+func (h *JiraHandler) ToggleIssuePlanned(w http.ResponseWriter, r *http.Request) {
+	planID := chi.URLParam(r, "planID")
+	snapshotID := chi.URLParam(r, "snapshotID")
+	issueKey := chi.URLParam(r, "issueKey")
+
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil || !h.Auth.IsPlanAdmin(user.ID, planID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	var body struct {
+		IsUnplanned *bool `json:"is_unplanned"`
+	}
+	_ = decode(r, &body)
+
+	var dataStr string
+	err := h.DB.QueryRow(`SELECT data FROM jira_snapshots WHERE id = ? AND plan_id = ?`, snapshotID, planID).Scan(&dataStr)
+	if err == sql.ErrNoRows {
+		respondErr(w, 404, "snapshot not found")
+		return
+	} else if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+
+	var snapshotData models.JiraSnapshotData
+	if err := json.Unmarshal([]byte(dataStr), &snapshotData); err != nil {
+		respondErr(w, 500, "failed to parse snapshot data")
+		return
+	}
+
+	found := false
+	for i := range snapshotData.Issues {
+		if snapshotData.Issues[i].Key == issueKey {
+			if body.IsUnplanned != nil {
+				snapshotData.Issues[i].IsUnplanned = *body.IsUnplanned
+			} else {
+				snapshotData.Issues[i].IsUnplanned = !snapshotData.Issues[i].IsUnplanned
+			}
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		respondErr(w, 404, "issue not found in snapshot")
+		return
+	}
+
+	updatedBytes, err := json.Marshal(snapshotData)
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+
+	_, err = h.DB.Exec(`UPDATE jira_snapshots SET data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND plan_id = ?`, string(updatedBytes), snapshotID, planID)
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+
+	h.GetSnapshotByID(w, r, planID, snapshotID)
 }
 

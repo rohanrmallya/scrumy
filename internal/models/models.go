@@ -68,6 +68,7 @@ type JiraIssue struct {
 	TimeSpentHours            float64 `json:"time_spent_hours"`
 	TimeSpentHoursAll         float64 `json:"time_spent_hours_all"`
 	StatusCategoryChangedDate string  `json:"status_category_changed_date"`
+	IsUnplanned               bool    `json:"is_unplanned,omitempty"`
 }
 
 type JiraTotals struct {

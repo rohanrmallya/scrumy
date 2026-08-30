@@ -67,6 +67,106 @@
   }
 
   let doneIssuesOnly = $state(false);
+  let activityFilter = $state<'all' | 'planned' | 'unplanned'>('all');
+  let togglingIssueKey = $state<string>('');
+
+  // Lookup map for issues by key
+  const issueMap = $derived.by(() => {
+    const map: Record<string, any> = {};
+    if (snapshot?.data?.issues) {
+      for (const issue of snapshot.data.issues) {
+        map[issue.key] = issue;
+      }
+    }
+    return map;
+  });
+
+  // Planned vs Unplanned Summary Metrics
+  const plannedStats = $derived.by(() => {
+    if (!snapshot?.data?.issues) {
+      return {
+        plannedHours: 0,
+        unplannedHours: 0,
+        plannedSP: 0,
+        unplannedSP: 0,
+        plannedPct: 100,
+        unplannedPct: 0,
+        plannedCount: 0,
+        unplannedCount: 0,
+        totalHours: 0,
+      };
+    }
+
+    const issues = snapshot.data.issues;
+    let plannedHours = 0;
+    let unplannedHours = 0;
+    let plannedSP = 0;
+    let unplannedSP = 0;
+    let plannedCount = 0;
+    let unplannedCount = 0;
+
+    for (const issue of issues) {
+      const isUnplanned = !!issue.is_unplanned;
+      const hours = showAllWorklogs && issue.time_spent_hours_all !== undefined 
+        ? (issue.time_spent_hours_all || 0) 
+        : (issue.time_spent_hours || 0);
+      
+      const isDone = (issue.status_category_key === 'done' || issue.status?.toLowerCase() === 'done');
+      const sp = isDone ? (issue.story_points || 0) : 0;
+
+      if (isUnplanned) {
+        unplannedHours += hours;
+        unplannedSP += sp;
+        unplannedCount++;
+      } else {
+        plannedHours += hours;
+        plannedSP += sp;
+        plannedCount++;
+      }
+    }
+
+    const totalHours = plannedHours + unplannedHours;
+    const plannedPct = totalHours > 0 ? (plannedHours / totalHours) * 100 : 100;
+    const unplannedPct = totalHours > 0 ? (unplannedHours / totalHours) * 100 : 0;
+
+    return {
+      plannedHours: Math.round(plannedHours * 100) / 100,
+      unplannedHours: Math.round(unplannedHours * 100) / 100,
+      plannedSP: Math.round(plannedSP * 10) / 10,
+      unplannedSP: Math.round(unplannedSP * 10) / 10,
+      plannedPct: Math.round(plannedPct),
+      unplannedPct: Math.round(unplannedPct),
+      plannedCount,
+      unplannedCount,
+      totalHours: Math.round(totalHours * 100) / 100,
+    };
+  });
+
+  async function toggleIssuePlanned(issueKey: string, currentUnplanned: boolean) {
+    if (!snapshot) return;
+    const targetVal = !currentUnplanned;
+
+    // Optimistic local update
+    if (snapshot.data?.issues) {
+      snapshot.data.issues = snapshot.data.issues.map(iss => 
+        iss.key === issueKey ? { ...iss, is_unplanned: targetVal } : iss
+      );
+    }
+    togglingIssueKey = issueKey;
+    try {
+      const updated = await api.jira.toggleIssuePlanned(planID, snapshotID, issueKey, targetVal);
+      snapshot = updated;
+    } catch (e: any) {
+      alert(`Failed to update issue: ${e.message}`);
+      if (snapshot.data?.issues) {
+        snapshot.data.issues = snapshot.data.issues.map(iss => 
+          iss.key === issueKey ? { ...iss, is_unplanned: currentUnplanned } : iss
+        );
+      }
+    } finally {
+      togglingIssueKey = '';
+    }
+  }
 
   // Derived filtered snapshot totals and leaderboard based on whether we only want worklog data of done tasks
   const computedData = $derived.by(() => {
@@ -92,30 +192,53 @@
       ? (snapshot.data.totals_all || snapshot.data.totals) 
       : snapshot.data.totals;
 
-    // Create lookup map for issue category/status
+    // Create lookup map for issue category/status & unplanned flag
     const doneStatusMap: Record<string, boolean> = {};
+    const unplannedStatusMap: Record<string, boolean> = {};
     for (const issue of issues) {
       const isDone = (issue.status_category_key === 'done' || 
                       issue.status?.toLowerCase() === 'done');
       doneStatusMap[issue.key] = isDone;
+      unplannedStatusMap[issue.key] = !!issue.is_unplanned;
     }
 
-    if (!doneIssuesOnly) {
-      return {
-        leaderboard: baseLeaderboard,
-        totalHoursLogged: baseTotals.total_hours_logged,
-        totalWorkLogs: baseTotals.total_work_logs,
-        avgHoursPerSP: baseTotals.avg_hours_per_sp,
-      };
+    let filteredSP = 0;
+    for (const issue of issues) {
+      const isDone = (issue.status_category_key === 'done' || issue.status?.toLowerCase() === 'done');
+      if (!isDone) continue;
+      const isUnplanned = !!issue.is_unplanned;
+      if (activityFilter === 'planned' && isUnplanned) continue;
+      if (activityFilter === 'unplanned' && !isUnplanned) continue;
+      filteredSP += (issue.story_points || 0);
     }
 
     // Filtered leaderboard
     let totalHoursLogged = 0;
     let totalWorkLogs = 0;
     const newLeaderboard = baseLeaderboard.map(entry => {
-      const filteredWorklogs = (entry.worklogs || []).filter(wl => doneStatusMap[wl.issue_key]);
+      const allEntryWorklogs = entry.worklogs || [];
+
+      // Calculate developer's planned vs unplanned hours
+      let devPlannedHours = 0;
+      let devUnplannedHours = 0;
+      for (const wl of allEntryWorklogs) {
+        if (doneIssuesOnly && !doneStatusMap[wl.issue_key]) continue;
+        if (unplannedStatusMap[wl.issue_key]) {
+          devUnplannedHours += wl.hours_logged;
+        } else {
+          devPlannedHours += wl.hours_logged;
+        }
+      }
+
+      // Filter worklogs by active filter
+      const filteredWorklogs = allEntryWorklogs.filter(wl => {
+        if (doneIssuesOnly && !doneStatusMap[wl.issue_key]) return false;
+        if (activityFilter === 'planned' && unplannedStatusMap[wl.issue_key]) return false;
+        if (activityFilter === 'unplanned' && !unplannedStatusMap[wl.issue_key]) return false;
+        return true;
+      });
+
       const hoursLogged = filteredWorklogs.reduce((sum, wl) => sum + wl.hours_logged, 0);
-      
       totalHoursLogged += hoursLogged;
       totalWorkLogs += filteredWorklogs.length;
 
@@ -123,6 +246,8 @@
         ...entry,
         hours_logged: hoursLogged,
         worklogs: filteredWorklogs,
+        planned_hours: Math.round(devPlannedHours * 100) / 100,
+        unplanned_hours: Math.round(devUnplannedHours * 100) / 100,
       };
     }).filter(entry => entry.hours_logged > 0);
 
@@ -135,8 +260,8 @@
     newLeaderboard.sort((a, b) => b.hours_logged - a.hours_logged);
 
     // Re-calculate average hours per SP
-    const totalSP = baseTotals.total_story_points;
-    const avgHoursPerSP = totalSP > 0 ? totalHoursLogged / totalSP : 0;
+    const targetSP = (activityFilter === 'all' && !doneIssuesOnly) ? baseTotals.total_story_points : filteredSP;
+    const avgHoursPerSP = targetSP > 0 ? totalHoursLogged / targetSP : 0;
 
     return {
       leaderboard: newLeaderboard,
@@ -332,13 +457,14 @@
     if (!snapshot || !computedData || !computedData.leaderboard) return;
 
     // Create lookup map for issue details to enrich worklogs
-    const issueMap: Record<string, { story_points: number; status: string; status_changed: string }> = {};
+    const issueMap: Record<string, { story_points: number; status: string; status_changed: string; is_unplanned: boolean }> = {};
     if (snapshot.data.issues) {
       for (const issue of snapshot.data.issues) {
         issueMap[issue.key] = {
           story_points: issue.story_points,
           status: issue.status,
-          status_changed: issue.status_category_changed_date
+          status_changed: issue.status_category_changed_date,
+          is_unplanned: !!issue.is_unplanned,
         };
       }
     }
@@ -348,6 +474,7 @@
       'Developer',
       'Issue Key',
       'Issue Summary',
+      'Classification',
       'Story Points',
       'Issue Status',
       'Status Changed Date',
@@ -359,7 +486,7 @@
     for (const entry of computedData.leaderboard) {
       if (!entry.worklogs || entry.worklogs.length === 0) continue;
       for (const wl of entry.worklogs) {
-        const issueDetails = issueMap[wl.issue_key] || { story_points: 0, status: 'Unknown', status_changed: '—' };
+        const issueDetails = issueMap[wl.issue_key] || { story_points: 0, status: 'Unknown', status_changed: '—', is_unplanned: false };
         
         let formattedDate = '—';
         if (issueDetails.status_changed && issueDetails.status_changed !== '—') {
@@ -374,6 +501,7 @@
           entry.author_name,
           wl.issue_key,
           wl.issue_summary || '',
+          issueDetails.is_unplanned ? 'Unplanned' : 'Planned',
           issueDetails.story_points > 0 ? issueDetails.story_points.toString() : '—',
           issueDetails.status || '—',
           formattedDate,
@@ -497,24 +625,101 @@
         </div>
       </div>
 
+      <!-- Planned vs. Unplanned Work Allocation Banner -->
+      <div style="background:var(--c-surface); padding:20px; border-radius:10px; border:1px solid var(--c-border); box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+          <div>
+            <h3 class="font-semibold text-sm" style="margin:0; display:flex; align-items:center; gap:8px;">
+              <span>⚖️</span> Work Allocation (Planned vs. Unplanned)
+            </h3>
+            <p class="text-xs text-muted" style="margin:4px 0 0 0;">
+              Total: <strong>{plannedStats.totalHours} hrs</strong> across {plannedStats.plannedCount + plannedStats.unplannedCount} issues in snapshot
+            </p>
+          </div>
+          <div style="display:flex; align-items:center; gap:16px; font-size:12px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="width:10px; height:10px; border-radius:50%; background:var(--c-primary); display:inline-block;"></span>
+              <span><strong>Planned:</strong> {plannedStats.plannedHours} hrs ({plannedStats.plannedPct}%) • {plannedStats.plannedSP} SP</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="width:10px; height:10px; border-radius:50%; background:#f59f00; display:inline-block;"></span>
+              <span><strong>Unplanned:</strong> {plannedStats.unplannedHours} hrs ({plannedStats.unplannedPct}%) • {plannedStats.unplannedSP} SP</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Split Progress Bar -->
+        <div style="width:100%; height:8px; background:var(--c-surface-2); border-radius:4px; overflow:hidden; display:flex;">
+          <div 
+            style="height:100%; width:{plannedStats.plannedPct}%; background:var(--c-primary); transition:width 300ms ease;" 
+            title="Planned: {plannedStats.plannedHours} hrs ({plannedStats.plannedPct}%)"
+          ></div>
+          <div 
+            style="height:100%; width:{plannedStats.unplannedPct}%; background:#f59f00; transition:width 300ms ease;" 
+            title="Unplanned: {plannedStats.unplannedHours} hrs ({plannedStats.unplannedPct}%)"
+          ></div>
+        </div>
+      </div>
+
       <!-- Leaderboard and Insights Block -->
       <div style="display:grid; grid-template-columns: 1fr; gap:24px; align-items:start;" class="grid-layout">
         
         <!-- Logged Hours Leaderboard Accordion Card -->
         <div class="card">
           <div class="card-header" style="display:flex; flex-direction:column; gap:12px; align-items:stretch; padding:16px 20px;">
-            <div class="flex justify-between items-center">
-              <h2 class="font-semibold text-base" style="display:flex; align-items:center; gap:8px; margin:0;">
-                <span>🏆</span> Logged Hours Leaderboard
-              </h2>
+            <div class="flex justify-between items-center" style="flex-wrap:wrap; gap:12px;">
+              <div>
+                <h2 class="font-semibold text-base" style="display:flex; align-items:center; gap:8px; margin:0;">
+                  <span>{activityFilter === 'unplanned' ? '⚡' : activityFilter === 'planned' ? '📋' : '🏆'}</span>
+                  {#if activityFilter === 'unplanned'}
+                    Unplanned Hours Leaderboard
+                  {:else if activityFilter === 'planned'}
+                    Planned Hours Leaderboard
+                  {:else}
+                    Logged Hours Leaderboard
+                  {/if}
+                </h2>
+                {#if activityFilter === 'unplanned'}
+                  <p class="text-xs text-muted" style="margin:2px 0 0 0; color:#f59f00;">
+                    Ranked by developers who logged the most hours on unplanned tickets
+                  </p>
+                {/if}
+              </div>
+
               <div class="flex items-center gap-3" style="flex-wrap: wrap;">
+                <!-- Activity Filter Tabs -->
+                <div style="display:inline-flex; background:var(--c-surface-2); border-radius:6px; padding:2px; border:1px solid var(--c-border-2);">
+                  <button 
+                    type="button"
+                    style="padding:4px 10px; font-size:11px; font-weight:600; border-radius:4px; border:none; cursor:pointer; background:{activityFilter === 'all' ? 'var(--c-surface)' : 'transparent'}; color:{activityFilter === 'all' ? 'var(--c-text)' : 'var(--c-text-3)'}; box-shadow:{activityFilter === 'all' ? 'var(--shadow-sm)' : 'none'}; transition:all 150ms ease;"
+                    onclick={() => activityFilter = 'all'}
+                  >
+                    All Work
+                  </button>
+                  <button 
+                    type="button"
+                    style="padding:4px 10px; font-size:11px; font-weight:600; border-radius:4px; border:none; cursor:pointer; background:{activityFilter === 'planned' ? 'var(--c-surface)' : 'transparent'}; color:{activityFilter === 'planned' ? 'var(--c-primary)' : 'var(--c-text-3)'}; box-shadow:{activityFilter === 'planned' ? 'var(--shadow-sm)' : 'none'}; transition:all 150ms ease;"
+                    onclick={() => activityFilter = 'planned'}
+                  >
+                    📋 Planned Only
+                  </button>
+                  <button 
+                    type="button"
+                    style="padding:4px 10px; font-size:11px; font-weight:600; border-radius:4px; border:none; cursor:pointer; background:{activityFilter === 'unplanned' ? 'var(--c-surface)' : 'transparent'}; color:{activityFilter === 'unplanned' ? '#f59f00' : 'var(--c-text-3)'}; box-shadow:{activityFilter === 'unplanned' ? 'var(--shadow-sm)' : 'none'}; transition:all 150ms ease;"
+                    onclick={() => activityFilter = 'unplanned'}
+                    title="Rank contributors who spent the most time on unplanned activities"
+                  >
+                    ⚡ Unplanned Only
+                  </button>
+                </div>
+
                 <!-- Worklog Filter Switch -->
                 <label 
                   style="display:inline-flex; align-items:center; gap:6px; font-size:12px; cursor:pointer; font-weight:normal; user-select:none; margin:0;"
                   title={!snapshot.data.totals_all ? "Click Refresh to enable this toggle for older snapshots" : ""}
                 >
                   <input type="checkbox" bind:checked={showAllWorklogs} disabled={!snapshot.data.totals_all} />
-                  <span>Include all worklogs (no date filter)</span>
+                  <span>Include all worklogs</span>
                 </label>
 
                 <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; cursor:pointer; font-weight:normal; user-select:none; margin:0;">
@@ -573,8 +778,13 @@
                       </span>
                       <div style="flex:1;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
-                          <div style="display:flex; align-items:center; gap:8px;">
+                          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                             <span class="font-bold text-sm" style="color:var(--c-text);">{entry.author_name}</span>
+                            {#if entry.planned_hours !== undefined && entry.unplanned_hours !== undefined}
+                              <span class="text-xs text-muted" style="font-size:11px;">
+                                (Planned: <strong>{entry.planned_hours}h</strong> • Unplanned: <strong style="color:{entry.unplanned_hours > 0 ? '#f59f00' : 'inherit'};">{entry.unplanned_hours}h</strong>)
+                              </span>
+                            {/if}
                             {#if uDelta}
                               {#if uDelta.hours_delta > 0}
                                 <span 
@@ -595,10 +805,12 @@
                               {/if}
                             {/if}
                           </div>
-                          <span class="font-semibold text-sm" style="color:var(--c-primary);">{entry.hours_logged.toFixed(1)} hrs <span class="text-xs text-muted font-normal">({entry.percentage.toFixed(0)}%)</span></span>
+                          <span class="font-semibold text-sm" style="color:{activityFilter === 'unplanned' ? '#f59f00' : 'var(--c-primary)'};">
+                            {entry.hours_logged.toFixed(1)} hrs <span class="text-xs text-muted font-normal">({entry.percentage.toFixed(0)}%)</span>
+                          </span>
                         </div>
                         <div style="width:100%; height:6px; background:var(--c-surface-2); border-radius:3px; overflow:hidden;">
-                          <div style="height:100%; width:{entry.percentage}%; background:var(--c-primary); border-radius:3px;"></div>
+                          <div style="height:100%; width:{entry.percentage}%; background:{activityFilter === 'unplanned' ? '#f59f00' : 'var(--c-primary)'}; border-radius:3px;"></div>
                         </div>
                       </div>
                     </div>
@@ -633,11 +845,13 @@
                               <tr style="border-bottom:1px solid var(--c-border); color:var(--c-text-3); font-size:11px;">
                                 <th style="padding:6px 8px; font-weight:600; width:110px;">Issue Key</th>
                                 <th style="padding:6px 8px; font-weight:600;">Summary</th>
+                                <th style="padding:6px 8px; font-weight:600; width:100px;">Classification</th>
                                 <th style="padding:6px 8px; font-weight:600; text-align:right; width:100px;">Logged Hours</th>
                               </tr>
                             </thead>
                             <tbody>
                               {#each entry.worklogs as wl}
+                                {@const isWlUnplanned = !!issueMap[wl.issue_key]?.is_unplanned}
                                 <tr style="border-bottom:1px solid var(--c-border-2);">
                                   <td style="padding:8px; font-weight:600; white-space:nowrap;">
                                     {#if plan?.jira_url}
@@ -649,7 +863,14 @@
                                   <td style="padding:8px; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title={wl.issue_summary}>
                                     {wl.issue_summary || '—'}
                                   </td>
-                                  <td style="padding:8px; text-align:right; font-weight:600; color:var(--c-primary);">
+                                  <td style="padding:8px; white-space:nowrap;">
+                                    {#if isWlUnplanned}
+                                      <span class="badge badge-warning" style="font-size:10px; padding:2px 6px;">⚡ Unplanned</span>
+                                    {:else}
+                                      <span class="badge badge-default" style="font-size:10px; padding:2px 6px;">📋 Planned</span>
+                                    {/if}
+                                  </td>
+                                  <td style="padding:8px; text-align:right; font-weight:600; color:{isWlUnplanned ? '#f59f00' : 'var(--c-primary)'};">
                                     {wl.hours_logged.toFixed(1)} hrs
                                   </td>
                                 </tr>
@@ -858,6 +1079,7 @@
                   <tr style="border-bottom:1px solid var(--c-border); background:var(--c-bg); color:var(--c-text-3); position:sticky; top:0; z-index:1;">
                     <th style="padding:12px 16px; font-weight:600;">Key</th>
                     <th style="padding:12px 16px; font-weight:600;">Summary</th>
+                    <th style="padding:12px 16px; font-weight:600; width:130px;">Classification</th>
                     <th style="padding:12px 16px; font-weight:600;">Status</th>
                     <th style="padding:12px 16px; font-weight:600; text-align:right;">Story Points</th>
                     <th style="padding:12px 16px; font-weight:600; text-align:right;">Logged Hours</th>
@@ -875,10 +1097,37 @@
                       </td>
                       <td style="padding:12px 16px; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title={issue.summary}>{issue.summary}</td>
                       <td style="padding:12px 16px; white-space:nowrap;">
+                        {#if plan?.is_admin}
+                          <button 
+                            type="button"
+                            class="badge {issue.is_unplanned ? 'badge-warning' : 'badge-default'}" 
+                            style="cursor:pointer; border:1px solid var(--c-border); font-size:11px; padding:3px 8px; font-weight:600; display:inline-flex; align-items:center; gap:4px; transition:all 150ms ease; background:{issue.is_unplanned ? 'rgba(245, 159, 0, 0.15)' : 'var(--c-surface-2)'}; color:{issue.is_unplanned ? '#f59f00' : 'var(--c-text)'};"
+                            onclick={() => toggleIssuePlanned(issue.key, !!issue.is_unplanned)}
+                            disabled={togglingIssueKey === issue.key}
+                            title="Click to toggle between Planned and Unplanned"
+                          >
+                            {#if togglingIssueKey === issue.key}
+                              <span class="spinner" style="width:10px; height:10px;"></span>
+                            {:else if issue.is_unplanned}
+                              <span>⚡ Unplanned</span>
+                            {:else}
+                              <span>📋 Planned</span>
+                            {/if}
+                          </button>
+                        {:else}
+                          <span 
+                            class="badge {issue.is_unplanned ? 'badge-warning' : 'badge-default'}" 
+                            style="font-size:11px; padding:3px 8px; background:{issue.is_unplanned ? 'rgba(245, 159, 0, 0.15)' : 'var(--c-surface-2)'}; color:{issue.is_unplanned ? '#f59f00' : 'var(--c-text)'};"
+                          >
+                            {issue.is_unplanned ? '⚡ Unplanned' : '📋 Planned'}
+                          </span>
+                        {/if}
+                      </td>
+                      <td style="padding:12px 16px; white-space:nowrap;">
                         <span class="badge badge-default" style="font-size:10px; padding:2px 6px;">{issue.status}</span>
                       </td>
                       <td style="padding:12px 16px; text-align:right; font-weight:500;">{issue.story_points > 0 ? issue.story_points : '—'}</td>
-                      <td style="padding:12px 16px; text-align:right; font-weight:500; color:var(--c-primary);">
+                      <td style="padding:12px 16px; text-align:right; font-weight:500; color:{issue.is_unplanned ? '#f59f00' : 'var(--c-primary)'};">
                         {(showAllWorklogs && issue.time_spent_hours_all !== undefined ? issue.time_spent_hours_all : issue.time_spent_hours).toFixed(1)} hrs
                       </td>
                     </tr>

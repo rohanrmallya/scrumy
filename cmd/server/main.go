@@ -81,6 +81,7 @@ func main() {
 		r.Put("/plans/{planID}/jira/snapshots/{snapshotID}", jiraH.UpdateSnapshot)
 		r.Post("/plans/{planID}/jira/snapshots/{snapshotID}/refresh", jiraH.RefreshSnapshot)
 		r.Delete("/plans/{planID}/jira/snapshots/{snapshotID}", jiraH.DeleteSnapshot)
+		r.Post("/plans/{planID}/jira/snapshots/{snapshotID}/issues/{issueKey}/toggle-planned", jiraH.ToggleIssuePlanned)
 
 		// Capacity Plans
 		r.Get("/plans/{planID}/capacity", capacityH.List)
