@@ -155,7 +155,9 @@ func (db *DB) Migrate() error {
 			prev_worklogs_count INTEGER NOT NULL,
 			new_worklogs_count  INTEGER NOT NULL,
 			prev_issues_count   INTEGER NOT NULL,
-			new_issues_count    INTEGER NOT NULL
+			new_issues_count    INTEGER NOT NULL,
+			user_deltas         TEXT NOT NULL DEFAULT '[]',
+			user_deltas_all     TEXT NOT NULL DEFAULT '[]'
 		)
 	`)
 	if err != nil {
@@ -165,6 +167,36 @@ func (db *DB) Migrate() error {
 	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_jira_snapshot_refresh_logs_snapshot_id ON jira_snapshot_refresh_logs(snapshot_id)`)
 	if err != nil {
 		return fmt.Errorf("create index idx_jira_snapshot_refresh_logs_snapshot_id: %w", err)
+	}
+
+	// Migration 6: Add user_deltas and user_deltas_all to jira_snapshot_refresh_logs if not exists
+	refreshLogColumns, err := db.getTableColumns("jira_snapshot_refresh_logs")
+	if err != nil {
+		return fmt.Errorf("get jira_snapshot_refresh_logs columns: %w", err)
+	}
+	hasUserDeltas := false
+	hasUserDeltasAll := false
+	for _, c := range refreshLogColumns {
+		if c == "user_deltas" {
+			hasUserDeltas = true
+		}
+		if c == "user_deltas_all" {
+			hasUserDeltasAll = true
+		}
+	}
+	if !hasUserDeltas {
+		log.Println("⚡ Migrating: adding user_deltas to jira_snapshot_refresh_logs table")
+		_, err = db.Exec("ALTER TABLE jira_snapshot_refresh_logs ADD COLUMN user_deltas TEXT NOT NULL DEFAULT '[]'")
+		if err != nil {
+			return fmt.Errorf("add user_deltas column: %w", err)
+		}
+	}
+	if !hasUserDeltasAll {
+		log.Println("⚡ Migrating: adding user_deltas_all to jira_snapshot_refresh_logs table")
+		_, err = db.Exec("ALTER TABLE jira_snapshot_refresh_logs ADD COLUMN user_deltas_all TEXT NOT NULL DEFAULT '[]'")
+		if err != nil {
+			return fmt.Errorf("add user_deltas_all column: %w", err)
+		}
 	}
 
 	return nil

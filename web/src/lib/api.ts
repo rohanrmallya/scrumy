@@ -211,6 +211,13 @@ export interface JiraSnapshotData {
 	leaderboard_all?: JiraLeaderboardEntry[];
 }
 
+export interface JiraUserRefreshDelta {
+	author_name: string;
+	prev_hours_logged: number;
+	new_hours_logged: number;
+	hours_delta: number;
+}
+
 export interface JiraSnapshotRefresh {
 	id: string;
 	snapshot_id: string;
@@ -223,6 +230,8 @@ export interface JiraSnapshotRefresh {
 	new_worklogs_count: number;
 	prev_issues_count: number;
 	new_issues_count: number;
+	user_deltas?: JiraUserRefreshDelta[];
+	user_deltas_all?: JiraUserRefreshDelta[];
 }
 
 export interface JiraSnapshot {

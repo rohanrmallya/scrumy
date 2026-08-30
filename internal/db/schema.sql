@@ -123,7 +123,9 @@ CREATE TABLE IF NOT EXISTS jira_snapshot_refresh_logs (
     prev_worklogs_count INTEGER NOT NULL,
     new_worklogs_count  INTEGER NOT NULL,
     prev_issues_count   INTEGER NOT NULL,
-    new_issues_count    INTEGER NOT NULL
+    new_issues_count    INTEGER NOT NULL,
+    user_deltas         TEXT NOT NULL DEFAULT '[]',
+    user_deltas_all     TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX IF NOT EXISTS idx_jira_snapshot_refresh_logs_snapshot_id ON jira_snapshot_refresh_logs(snapshot_id);

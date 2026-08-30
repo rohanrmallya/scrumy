@@ -2,10 +2,10 @@
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { api, type JiraSnapshot, type Plan } from '$lib/api';
+  import { api, type JiraSnapshot, type Plan, type JiraUserRefreshDelta } from '$lib/api';
 
-  const planID = $derived($page.params.id);
-  const snapshotID = $derived($page.params.snapid);
+  const planID = $derived($page.params.id as string);
+  const snapshotID = $derived($page.params.snapid as string);
 
   let plan = $state<Plan | null>(null);
   let snapshot = $state<JiraSnapshot | null>(null);
@@ -18,6 +18,14 @@
   let deleting = $state(false);
 
   let showAllWorklogs = $state(false);
+  let expandedRefreshContributors = $state<Record<string, boolean>>({});
+
+  // Contributor Refresh Breakdown Modal State
+  let showRefreshBreakdownModal = $state(false);
+  let selectedRefreshLogId = $state<string>('');
+  let modalSearchQuery = $state('');
+  let modalOnlyChanges = $state(false);
+  let modalSortBy = $state<'delta' | 'hours' | 'name'>('delta');
 
   async function loadData() {
     loading = true;
@@ -143,6 +151,71 @@
       entry.author_name.toLowerCase().includes(leaderboardSearchQuery.trim().toLowerCase())
     )
   );
+
+  const latestRefresh = $derived(
+    snapshot?.refresh_history && snapshot.refresh_history.length > 0
+      ? snapshot.refresh_history[0]
+      : null
+  );
+
+  const userDeltaMap = $derived.by(() => {
+    const map: Record<string, JiraUserRefreshDelta> = {};
+    if (!latestRefresh) return map;
+    const hasAll = !!snapshot?.data?.totals_all && !!snapshot?.data?.leaderboard_all;
+    const activeShowAll = showAllWorklogs && hasAll;
+    const deltas = activeShowAll && latestRefresh.user_deltas_all
+      ? latestRefresh.user_deltas_all
+      : (latestRefresh.user_deltas || []);
+    for (const d of deltas) {
+      map[d.author_name] = d;
+    }
+    return map;
+  });
+
+  function openRefreshBreakdown(logId?: string) {
+    if (logId) {
+      selectedRefreshLogId = logId;
+    } else if (snapshot?.refresh_history && snapshot.refresh_history.length > 0) {
+      selectedRefreshLogId = snapshot.refresh_history[0].id;
+    }
+    modalSearchQuery = '';
+    modalOnlyChanges = false;
+    modalSortBy = 'delta';
+    showRefreshBreakdownModal = true;
+  }
+
+  const selectedRefreshLog = $derived(
+    (snapshot?.refresh_history || []).find(r => r.id === selectedRefreshLogId) || 
+    (snapshot?.refresh_history?.[0] ?? null)
+  );
+
+  const selectedRefreshDeltas = $derived.by(() => {
+    if (!selectedRefreshLog) return [];
+    const hasAll = !!snapshot?.data?.totals_all && !!snapshot?.data?.leaderboard_all;
+    const activeShowAll = showAllWorklogs && hasAll;
+    const base = activeShowAll && selectedRefreshLog.user_deltas_all
+      ? selectedRefreshLog.user_deltas_all
+      : (selectedRefreshLog.user_deltas || []);
+    
+    let filtered = base.filter(d => {
+      if (modalOnlyChanges && d.hours_delta === 0) return false;
+      if (modalSearchQuery.trim()) {
+        return d.author_name.toLowerCase().includes(modalSearchQuery.trim().toLowerCase());
+      }
+      return true;
+    });
+
+    return [...filtered].sort((a, b) => {
+      if (modalSortBy === 'delta') {
+        if (a.hours_delta !== b.hours_delta) return b.hours_delta - a.hours_delta;
+        return b.new_hours_logged - a.new_hours_logged;
+      } else if (modalSortBy === 'hours') {
+        return b.new_hours_logged - a.new_hours_logged;
+      } else {
+        return a.author_name.localeCompare(b.author_name);
+      }
+    });
+  });
 
   // Edit Snapshot Modal state
   let showEditModal = $state(false);
@@ -481,6 +554,7 @@
             {:else}
               {#each filteredLeaderboard as entry, idx}
                 {@const isExpanded = !!expandedDevelopers[entry.author_name]}
+                {@const uDelta = userDeltaMap[entry.author_name]}
                 <div 
                   style="background:var(--c-surface); border:1px solid var(--c-border); border-radius:8px; overflow:hidden; transition:all 150ms ease; box-shadow:var(--shadow-sm);"
                 >
@@ -498,8 +572,29 @@
                         {idx + 1}
                       </span>
                       <div style="flex:1;">
-                        <div style="display:flex; justify-content:between; align-items:center; margin-bottom:6px;">
-                          <span class="font-bold text-sm" style="color:var(--c-text);">{entry.author_name}</span>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
+                          <div style="display:flex; align-items:center; gap:8px;">
+                            <span class="font-bold text-sm" style="color:var(--c-text);">{entry.author_name}</span>
+                            {#if uDelta}
+                              {#if uDelta.hours_delta > 0}
+                                <span 
+                                  class="badge badge-success" 
+                                  style="font-size:10px; padding:2px 6px; font-weight:700; display:inline-flex; align-items:center; gap:2px; border-radius:4px;"
+                                  title="Added in last refresh: +{uDelta.hours_delta.toFixed(1)} hrs ({uDelta.prev_hours_logged.toFixed(1)} → {uDelta.new_hours_logged.toFixed(1)} hrs)"
+                                >
+                                  +{uDelta.hours_delta.toFixed(1)} hrs
+                                </span>
+                              {:else if uDelta.hours_delta < 0}
+                                <span 
+                                  class="badge badge-danger" 
+                                  style="font-size:10px; padding:2px 6px; font-weight:700; display:inline-flex; align-items:center; gap:2px; border-radius:4px;"
+                                  title="Reduced in last refresh: {uDelta.hours_delta.toFixed(1)} hrs ({uDelta.prev_hours_logged.toFixed(1)} → {uDelta.new_hours_logged.toFixed(1)} hrs)"
+                                >
+                                  {uDelta.hours_delta.toFixed(1)} hrs
+                                </span>
+                              {/if}
+                            {/if}
+                          </div>
                           <span class="font-semibold text-sm" style="color:var(--c-primary);">{entry.hours_logged.toFixed(1)} hrs <span class="text-xs text-muted font-normal">({entry.percentage.toFixed(0)}%)</span></span>
                         </div>
                         <div style="width:100%; height:6px; background:var(--c-surface-2); border-radius:3px; overflow:hidden;">
@@ -516,6 +611,16 @@
                   <!-- Expanded Tasks List -->
                   {#if isExpanded}
                     <div style="border-top:1px solid var(--c-border); padding:16px 20px; background:var(--c-surface);">
+                      {#if uDelta && uDelta.hours_delta !== 0}
+                        <div style="margin-bottom:12px; padding:8px 12px; border-radius:6px; background:var(--c-surface-2); border:1px solid var(--c-border); font-size:11px; display:flex; justify-content:space-between; align-items:center;">
+                          <span class="text-muted" style="display:inline-flex; align-items:center; gap:6px;">
+                            <span>🔄</span> <strong>Last Refresh:</strong> {uDelta.prev_hours_logged.toFixed(1)} hrs → {uDelta.new_hours_logged.toFixed(1)} hrs
+                          </span>
+                          <span style="font-weight:700; color:{uDelta.hours_delta > 0 ? 'var(--c-success)' : 'var(--c-danger)'};">
+                            {uDelta.hours_delta > 0 ? '+' : ''}{uDelta.hours_delta.toFixed(1)} hrs
+                          </span>
+                        </div>
+                      {/if}
                       {#if !entry.worklogs || entry.worklogs.length === 0}
                         <div style="padding:10px 0; text-align:center; color:var(--c-text-3); font-size:11px;">
                           <p>No per-task worklogs recorded in snapshot.</p>
@@ -588,12 +693,22 @@
 
           <!-- Refresh History Card -->
           <div class="card">
-            <div class="card-header" style="padding:16px 20px; border-bottom: 1px solid var(--c-border-2);">
+            <div class="card-header" style="padding:16px 20px; border-bottom: 1px solid var(--c-border-2); display:flex; justify-content:space-between; align-items:center;">
               <h3 class="font-semibold text-sm" style="margin:0; display:flex; align-items:center; gap:8px;">
                 <span>🔄</span> Refresh History
               </h3>
+              {#if snapshot.refresh_history && snapshot.refresh_history.length > 0}
+                <button 
+                  class="btn btn-secondary btn-sm" 
+                  style="font-size:11px; padding:4px 8px; display:inline-flex; align-items:center; gap:4px;"
+                  onclick={() => openRefreshBreakdown()}
+                  title="View full contributor breakdown across refreshes"
+                >
+                  <span>👥 Contributor Breakdown</span>
+                </button>
+              {/if}
             </div>
-            <div class="card-body" style="padding: 16px 20px; display:flex; flex-direction:column; gap:16px; max-height:380px; overflow-y:auto; background:var(--c-bg);">
+            <div class="card-body" style="padding: 16px 20px; display:flex; flex-direction:column; gap:16px; max-height:420px; overflow-y:auto; background:var(--c-bg);">
               {#if !snapshot.refresh_history || snapshot.refresh_history.length === 0}
                 <p class="text-xs text-muted" style="text-align:center; padding:12px 0; margin:0;">No refreshes recorded yet.</p>
               {:else}
@@ -604,15 +719,27 @@
                     {@const worklogsDiff = log.new_worklogs_count - log.prev_worklogs_count}
                     {@const issuesDiff = log.new_issues_count - log.prev_issues_count}
                     {@const hasChanges = spDiff !== 0 || hoursDiff !== 0 || worklogsDiff !== 0 || issuesDiff !== 0}
+                    {@const logDeltas = (showAllWorklogs && log.user_deltas_all ? log.user_deltas_all : log.user_deltas) || []}
+                    {@const activeContributors = logDeltas.filter(d => d.hours_delta !== 0)}
 
                     <div style="background:var(--c-surface); border:1px solid var(--c-border); border-radius:8px; padding:14px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:10px;">
-                      <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
                         <span class="font-bold text-xs" style="color:var(--c-text);">{formatDateTime(log.refreshed_at)}</span>
-                        {#if hasChanges}
-                          <span class="badge badge-success" style="font-size:9px; padding:1px 6px;">Changes</span>
-                        {:else}
-                          <span class="badge badge-default" style="font-size:9px; padding:1px 6px; background:var(--c-surface-2); color:var(--c-text-3);">No changes</span>
-                        {/if}
+                        <div style="display:flex; align-items:center; gap:6px;">
+                          {#if hasChanges}
+                            <span class="badge badge-success" style="font-size:9px; padding:1px 6px;">Changes</span>
+                          {:else}
+                            <span class="badge badge-default" style="font-size:9px; padding:1px 6px; background:var(--c-surface-2); color:var(--c-text-3);">No changes</span>
+                          {/if}
+                          <button 
+                            class="btn btn-secondary btn-sm" 
+                            style="padding:2px 8px; font-size:10px; height:22px; display:inline-flex; align-items:center; gap:4px;"
+                            onclick={() => openRefreshBreakdown(log.id)}
+                            title="Inspect who added hours in this refresh"
+                          >
+                            <span>🔍 Breakdown</span>
+                          </button>
+                        </div>
                       </div>
 
                       <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:11px; border-top:1px solid var(--c-border-2); padding-top:8px;">
@@ -670,6 +797,40 @@
                         </div>
 
                       </div>
+
+                      <!-- Inline Contributor Changes Accordion -->
+                      {#if activeContributors.length > 0}
+                        {@const isContrExpanded = !!expandedRefreshContributors[log.id]}
+                        <div style="border-top:1px solid var(--c-border-2); padding-top:8px;">
+                          <button 
+                            onclick={() => expandedRefreshContributors[log.id] = !isContrExpanded}
+                            style="width:100%; display:flex; justify-content:space-between; align-items:center; background:transparent; border:none; padding:4px 0; cursor:pointer; font-size:11px; color:var(--c-primary); font-weight:600; text-align:left;"
+                          >
+                            <span style="display:inline-flex; align-items:center; gap:4px;">
+                              <span>👤</span> {activeContributors.length} contributor{activeContributors.length === 1 ? '' : 's'} changed hours
+                            </span>
+                            <span style="font-size:9px; transition:transform 150ms ease; transform:rotate({isContrExpanded ? '90deg' : '0deg'});">▶</span>
+                          </button>
+
+                          {#if isContrExpanded}
+                            <div style="margin-top:6px; display:flex; flex-direction:column; gap:4px; max-height:160px; overflow-y:auto; padding-right:2px;">
+                              {#each activeContributors as contr}
+                                <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; background:var(--c-bg); padding:5px 8px; border-radius:4px; border:1px solid var(--c-border);">
+                                  <span style="font-weight:600; color:var(--c-text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px;" title={contr.author_name}>
+                                    {contr.author_name}
+                                  </span>
+                                  <span style="display:inline-flex; align-items:center; gap:4px; font-weight:600;">
+                                    <span class="text-muted" style="font-size:10px; font-weight:normal;">{contr.prev_hours_logged.toFixed(1)} → {contr.new_hours_logged.toFixed(1)}</span>
+                                    <span style="color:{contr.hours_delta > 0 ? 'var(--c-success)' : 'var(--c-danger)'}; font-size:11px; font-weight:700;">
+                                      {contr.hours_delta > 0 ? '+' : ''}{contr.hours_delta.toFixed(1)} hrs
+                                    </span>
+                                  </span>
+                                </div>
+                              {/each}
+                            </div>
+                          {/if}
+                        </div>
+                      {/if}
                     </div>
                   {/each}
                 </div>
@@ -767,6 +928,145 @@
             {updatingSnapshot ? 'Saving...' : 'Save'}
           </button>
         </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if showRefreshBreakdownModal && selectedRefreshLog}
+    {@const totHoursDiff = selectedRefreshLog.new_hours_logged - selectedRefreshLog.prev_hours_logged}
+    {@const totSpDiff = selectedRefreshLog.new_story_points - selectedRefreshLog.prev_story_points}
+    <div style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:1000; backdrop-filter:blur(4px); transition: opacity 0.2s ease;">
+      <div style="background:var(--c-surface); border:1px solid var(--c-border); border-radius:12px; width:740px; max-width:92%; max-height:90vh; display:flex; flex-direction:column; box-shadow:var(--shadow-lg); overflow:hidden;">
+        
+        <!-- Modal Header -->
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:18px 24px; border-bottom:1px solid var(--c-border);">
+          <div>
+            <h3 class="font-bold text-lg" style="margin:0; display:flex; align-items:center; gap:8px;">
+              <span>🔄</span> Contributor Refresh Breakdown
+            </h3>
+            <p class="text-xs text-muted" style="margin-top:2px; margin-bottom:0;">
+              See who added or changed hours between refreshes.
+            </p>
+          </div>
+          <button class="btn-icon" onclick={() => showRefreshBreakdownModal = false} style="font-size:16px; width:32px; height:32px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; background:transparent; cursor:pointer;">✕</button>
+        </div>
+
+        <!-- Refresh Picker & Summary Bar -->
+        <div style="padding:16px 24px; background:var(--c-bg); border-bottom:1px solid var(--c-border); display:flex; flex-direction:column; gap:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:12px; font-weight:600; color:var(--c-text-2);">Select Refresh:</span>
+              <select class="input" style="padding:6px 12px; font-size:12px; min-width:240px;" bind:value={selectedRefreshLogId}>
+                {#each (snapshot?.refresh_history || []) as r, idx}
+                  <option value={r.id}>
+                    {formatDateTime(r.refreshed_at)} {idx === 0 ? '(Latest)' : ''}
+                  </option>
+                {/each}
+              </select>
+            </div>
+
+            <!-- Total Diff Pills -->
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="badge {totHoursDiff >= 0 ? 'badge-success' : 'badge-danger'}" style="padding:4px 8px; font-size:11px; font-weight:700;">
+                Hours: {totHoursDiff > 0 ? '+' : ''}{totHoursDiff.toFixed(1)} hrs
+              </span>
+              <span class="badge {totSpDiff >= 0 ? 'badge-success' : 'badge-danger'}" style="padding:4px 8px; font-size:11px; font-weight:700;">
+                SP: {totSpDiff > 0 ? '+' : ''}{totSpDiff.toFixed(1)} SP
+              </span>
+            </div>
+          </div>
+
+          <!-- Filter Controls -->
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+            <div style="position:relative; flex:1; min-width:200px;">
+              <span style="position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:12px; color:var(--c-text-3);">🔍</span>
+              <input 
+                type="text" 
+                class="input" 
+                placeholder="Search contributors..." 
+                bind:value={modalSearchQuery} 
+                style="padding-left:30px; padding-top:6px; padding-bottom:6px; font-size:12px; width:100%;"
+              />
+            </div>
+
+            <div style="display:flex; align-items:center; gap:12px;">
+              <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; cursor:pointer; user-select:none; margin:0;">
+                <input type="checkbox" bind:checked={modalOnlyChanges} />
+                <span>Only changes ({selectedRefreshDeltas.filter(d => d.hours_delta !== 0).length})</span>
+              </label>
+
+              <select class="input" style="padding:6px 8px; font-size:12px;" bind:value={modalSortBy}>
+                <option value="delta">Sort by Hours Added</option>
+                <option value="hours">Sort by Total Hours</option>
+                <option value="name">Sort by Name</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Contributor List / Table -->
+        <div style="flex:1; overflow-y:auto; padding:0; max-height:420px;">
+          {#if selectedRefreshDeltas.length === 0}
+            <div style="padding:40px; text-align:center; color:var(--c-text-3); font-size:13px;">
+              No contributors found matching current filters.
+            </div>
+          {:else}
+            <table style="width:100%; border-collapse:collapse; text-align:left; font-size:12px;">
+              <thead>
+                <tr style="background:var(--c-surface-2); border-bottom:1px solid var(--c-border); color:var(--c-text-3); position:sticky; top:0; z-index:1;">
+                  <th style="padding:10px 16px; font-weight:600;">Contributor</th>
+                  <th style="padding:10px 16px; font-weight:600; text-align:right; width:130px;">Previous Hours</th>
+                  <th style="padding:10px 16px; font-weight:600; text-align:right; width:130px;">New Hours</th>
+                  <th style="padding:10px 16px; font-weight:600; text-align:right; width:150px;">Hours Added / Delta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each selectedRefreshDeltas as d}
+                  <tr style="border-bottom:1px solid var(--c-border); background:var(--c-surface);">
+                    <td style="padding:10px 16px; font-weight:600;">
+                      <div style="display:flex; align-items:center; gap:8px;">
+                        <span>{d.author_name}</span>
+                        {#if d.prev_hours_logged === 0 && d.new_hours_logged > 0}
+                          <span class="badge badge-primary" style="font-size:9px; padding:1px 5px;">New</span>
+                        {/if}
+                      </div>
+                    </td>
+                    <td style="padding:10px 16px; text-align:right; color:var(--c-text-2);">
+                      {d.prev_hours_logged.toFixed(1)} hrs
+                    </td>
+                    <td style="padding:10px 16px; text-align:right; font-weight:600; color:var(--c-text);">
+                      {d.new_hours_logged.toFixed(1)} hrs
+                    </td>
+                    <td style="padding:10px 16px; text-align:right;">
+                      {#if d.hours_delta > 0}
+                        <span class="badge badge-success" style="font-size:11px; padding:3px 8px; font-weight:700;">
+                          +{d.hours_delta.toFixed(1)} hrs
+                        </span>
+                      {:else if d.hours_delta < 0}
+                        <span class="badge badge-danger" style="font-size:11px; padding:3px 8px; font-weight:700;">
+                          {d.hours_delta.toFixed(1)} hrs
+                        </span>
+                      {:else}
+                        <span class="text-muted" style="font-size:11px;">0.0 hrs (No change)</span>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+        </div>
+
+        <!-- Modal Footer -->
+        <div style="padding:14px 24px; border-top:1px solid var(--c-border); display:flex; justify-content:space-between; align-items:center; background:var(--c-surface);">
+          <span class="text-xs text-muted">
+            Showing {selectedRefreshDeltas.length} contributor{selectedRefreshDeltas.length === 1 ? '' : 's'}
+          </span>
+          <button class="btn btn-secondary btn-sm" onclick={() => showRefreshBreakdownModal = false}>
+            Close
+          </button>
+        </div>
+
       </div>
     </div>
   {/if}

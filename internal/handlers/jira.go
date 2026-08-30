@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"scrumy/internal/calc"
 	"scrumy/internal/db"
 	"scrumy/internal/jira"
 	"scrumy/internal/models"
@@ -243,7 +244,8 @@ func (h *JiraHandler) GetSnapshotByID(w http.ResponseWriter, r *http.Request, pl
 	rows, err := h.DB.Query(`
 		SELECT id, snapshot_id, prev_story_points, new_story_points,
 		       prev_hours_logged, new_hours_logged, prev_worklogs_count, new_worklogs_count,
-		       prev_issues_count, new_issues_count, refreshed_at
+		       prev_issues_count, new_issues_count, refreshed_at,
+		       user_deltas, user_deltas_all
 		FROM jira_snapshot_refresh_logs
 		WHERE snapshot_id = ?
 		ORDER BY refreshed_at DESC
@@ -258,9 +260,11 @@ func (h *JiraHandler) GetSnapshotByID(w http.ResponseWriter, r *http.Request, pl
 	for rows.Next() {
 		var hr models.JiraSnapshotRefresh
 		var refreshedAt string
+		var userDeltasStr, userDeltasAllStr string
 		err := rows.Scan(&hr.ID, &hr.SnapshotID, &hr.PrevStoryPoints, &hr.NewStoryPoints,
 			&hr.PrevHoursLogged, &hr.NewHoursLogged, &hr.PrevWorklogsCount, &hr.NewWorklogsCount,
-			&hr.PrevIssuesCount, &hr.NewIssuesCount, &refreshedAt)
+			&hr.PrevIssuesCount, &hr.NewIssuesCount, &refreshedAt,
+			&userDeltasStr, &userDeltasAllStr)
 		if err != nil {
 			respondErr(w, 500, err.Error())
 			return
@@ -271,6 +275,18 @@ func (h *JiraHandler) GetSnapshotByID(w http.ResponseWriter, r *http.Request, pl
 		}
 		if hr.RefreshedAt.IsZero() {
 			hr.RefreshedAt, _ = time.Parse("2006-01-02T15:04:05Z", refreshedAt)
+		}
+		if userDeltasStr != "" {
+			_ = json.Unmarshal([]byte(userDeltasStr), &hr.UserDeltas)
+		}
+		if hr.UserDeltas == nil {
+			hr.UserDeltas = []models.JiraUserRefreshDelta{}
+		}
+		if userDeltasAllStr != "" {
+			_ = json.Unmarshal([]byte(userDeltasAllStr), &hr.UserDeltasAll)
+		}
+		if hr.UserDeltasAll == nil {
+			hr.UserDeltasAll = []models.JiraUserRefreshDelta{}
 		}
 		history = append(history, hr)
 	}
@@ -354,6 +370,18 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 	prevIssues := len(oldData.Issues)
 	newIssues := len(data.Issues)
 
+	userDeltas := calc.ComputeUserDeltas(oldData.Leaderboard, data.Leaderboard)
+	userDeltasAll := calc.ComputeUserDeltas(oldData.LeaderboardAll, data.LeaderboardAll)
+
+	userDeltasJson, err := json.Marshal(userDeltas)
+	if err != nil {
+		userDeltasJson = []byte("[]")
+	}
+	userDeltasAllJson, err := json.Marshal(userDeltasAll)
+	if err != nil {
+		userDeltasAllJson = []byte("[]")
+	}
+
 	// Update snapshot and write history in a transaction
 	tx, err := h.DB.Begin()
 	if err != nil {
@@ -377,9 +405,10 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 		INSERT INTO jira_snapshot_refresh_logs (
 			id, snapshot_id, prev_story_points, new_story_points,
 			prev_hours_logged, new_hours_logged, prev_worklogs_count, new_worklogs_count,
-			prev_issues_count, new_issues_count, refreshed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, refreshID, id, prevSP, newSP, prevHours, newHours, prevWorklogs, newWorklogs, prevIssues, newIssues)
+			prev_issues_count, new_issues_count, refreshed_at,
+			user_deltas, user_deltas_all
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+	`, refreshID, id, prevSP, newSP, prevHours, newHours, prevWorklogs, newWorklogs, prevIssues, newIssues, string(userDeltasJson), string(userDeltasAllJson))
 	if err != nil {
 		respondErr(w, 500, err.Error())
 		return
