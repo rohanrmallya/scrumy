@@ -37,7 +37,7 @@
   );
 
   // Tab switcher
-  let activeTab = $state<'overview' | 'jira' | 'admins'>('overview');
+  let activeTab = $state<'overview' | 'settings'>('overview');
 
   // Jira Config Form
   let jiraURL = $state('');
@@ -67,6 +67,7 @@
         api.jira.listSnapshots(teamID),
       ]);
       team = p;
+      teamNameDraft = p.name ?? '';
       capacityPlans = c;
       presentations = pr;
       snapshots = sn;
@@ -307,7 +308,7 @@
   }
 
   async function deleteTeam() {
-    if (!confirm('PERMANENTLY DELETE THIS ENTIRE PLAN AND ALL ITS DATA?')) return;
+    if (!confirm('PERMANENTLY DELETE THIS ENTIRE TEAM AND ALL ITS DATA?')) return;
     try {
       await api.teams.delete(teamID);
       goto('/');
@@ -316,16 +317,10 @@
     }
   }
 
-  let editingTeamName = $state(false);
   let teamNameDraft = $state('');
   let renamingTeam = $state(false);
   let renameError = $state('');
-
-  function startRenameTeam() {
-    teamNameDraft = team?.name ?? '';
-    renameError = '';
-    editingTeamName = true;
-  }
+  let renameSaved = $state(false);
 
   async function saveTeamName() {
     const name = teamNameDraft.trim();
@@ -335,9 +330,10 @@
     }
     renamingTeam = true;
     renameError = '';
+    renameSaved = false;
     try {
       team = await api.teams.update(teamID, name);
-      editingTeamName = false;
+      renameSaved = true;
     } catch (e: any) {
       renameError = e.message;
     } finally {
@@ -374,40 +370,9 @@
     </div>
   {:else}
     <!-- Header -->
-    <div class="flex items-center justify-between" style="margin-bottom:20px; gap:16px;">
-      <div style="min-width:0; flex:1;">
-        {#if editingTeamName}
-          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-            <input
-              class="input"
-              style="max-width:320px; font-size:18px; font-weight:700; padding:6px 10px;"
-              bind:value={teamNameDraft}
-              placeholder="Team name"
-              disabled={renamingTeam}
-              onkeydown={(e) => { if (e.key === 'Enter') saveTeamName(); if (e.key === 'Escape') editingTeamName = false; }}
-              autofocus
-            />
-            <button class="btn btn-primary btn-sm" onclick={saveTeamName} disabled={renamingTeam || !teamNameDraft.trim()}>
-              {renamingTeam ? 'Saving…' : 'Save'}
-            </button>
-            <button class="btn btn-secondary btn-sm" onclick={() => editingTeamName = false} disabled={renamingTeam}>Cancel</button>
-          </div>
-          {#if renameError}
-            <p class="text-xs" style="color:var(--c-danger); margin-top:6px;">⚠️ {renameError}</p>
-          {/if}
-        {:else}
-          <h1 class="text-2xl font-bold" style="display:flex; align-items:center; gap:8px;">
-            {team?.name}
-            {#if team?.is_admin}
-              <button class="btn-icon" onclick={startRenameTeam} title="Rename team" style="font-size:14px;" aria-label="Rename team">✎</button>
-            {/if}
-          </h1>
-        {/if}
-        <p class="text-sm text-muted" style="margin-top:2px;">Team Workspace</p>
-      </div>
-      {#if team?.is_admin}
-        <button class="btn btn-outline-danger btn-sm" onclick={deleteTeam}>Delete Team</button>
-      {/if}
+    <div style="margin-bottom:20px;">
+      <h1 class="text-2xl font-bold">{team?.name}</h1>
+      <p class="text-sm text-muted" style="margin-top:2px;">Team Workspace</p>
     </div>
 
     <!-- Tabs switcher -->
@@ -419,19 +384,11 @@
         Sprint Overview
       </button>
       <button 
-        class="tab-btn {activeTab === 'jira' ? 'active' : ''}" 
-        onclick={() => activeTab = 'jira'}
+        class="tab-btn {activeTab === 'settings' ? 'active' : ''}" 
+        onclick={() => { activeTab = 'settings'; teamNameDraft = team?.name ?? ''; renameError = ''; renameSaved = false; }}
       >
-        Jira Integration
+        ⚙️ Settings
       </button>
-      {#if team?.is_admin}
-        <button
-          class="tab-btn {activeTab === 'admins' ? 'active' : ''}"
-          onclick={() => activeTab = 'admins'}
-        >
-          Manage Admins
-        </button>
-      {/if}
     </div>
 
     {#if activeTab === 'overview'}
@@ -451,7 +408,7 @@
           <div>
             {#if capacityPlans.length === 0}
               <div class="empty-state">
-                <p>No capacity teams yet.</p>
+                <p>No capacity plans yet.</p>
                 {#if team?.is_admin}
                   <a href="/teams/{teamID}/capacity/new" class="btn btn-primary btn-sm" style="margin-top:12px;">Create First Plan</a>
                 {/if}
@@ -694,9 +651,47 @@
         </div>
 
       </div>
-    {:else if activeTab === 'jira'}
-      <!-- Jira settings -->
-      <div style="max-width:600px; margin:0 auto;">
+    {:else if activeTab === 'settings'}
+      <!-- Team Settings -->
+      <div style="max-width:720px; margin:0 auto; display:flex; flex-direction:column; gap:20px;">
+        <!-- General -->
+        <div class="card">
+          <div class="card-header">
+            <div class="flex items-center gap-2">
+              <span>👥</span>
+              <h2 class="font-semibold" style="font-size:15px;">General</h2>
+            </div>
+          </div>
+          <div class="card-body" style="display:flex; flex-direction:column; gap:12px; padding-top:16px;">
+            <div class="form-group">
+              <label class="label" style="font-size:11px;" for="team-name">Team name</label>
+              <div class="flex gap-2">
+                <input
+                  id="team-name"
+                  class="input"
+                  bind:value={teamNameDraft}
+                  placeholder="e.g. Phoenix"
+                  disabled={!team?.is_admin || renamingTeam}
+                  onkeydown={(e) => { if (e.key === 'Enter') saveTeamName(); }}
+                />
+                {#if team?.is_admin}
+                  <button class="btn btn-primary btn-sm" style="white-space:nowrap;" onclick={saveTeamName} disabled={renamingTeam || !teamNameDraft.trim()}>
+                    {renamingTeam ? 'Saving…' : 'Save'}
+                  </button>
+                {/if}
+              </div>
+              {#if renameError}
+                <p class="text-xs" style="color:var(--c-danger); margin-top:6px;">⚠️ {renameError}</p>
+              {/if}
+              {#if renameSaved}
+                <p class="text-xs" style="color:var(--c-success); margin-top:6px;">✓ Team name saved</p>
+              {/if}
+              {#if !team?.is_admin}
+                <p class="text-xs text-muted" style="font-size:10px;">Only team admins can rename this team.</p>
+              {/if}
+            </div>
+          </div>
+        </div>
         <!-- Jira Credentials Settings -->
         <div class="card">
           <div class="card-header">
@@ -750,10 +745,8 @@
             {/if}
           </div>
         </div>
-      </div>
-    {:else if activeTab === 'admins'}
-      <!-- Admins Management -->
-      <div style="max-width:720px; margin:0 auto;">
+        {#if team?.is_admin}
+        <!-- Admins Management -->
         <div class="card">
           <div class="card-header">
             <div class="flex items-center gap-2">
@@ -877,6 +870,20 @@
             </div>
           </div>
         </div>
+        {/if}
+
+        {#if team?.is_admin}
+        <!-- Danger zone -->
+        <div class="card" style="border-color:#fecaca;">
+          <div class="card-body" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+            <div>
+              <p class="font-semibold" style="font-size:14px; color:var(--c-danger);">Delete this team</p>
+              <p class="text-xs text-muted" style="margin-top:2px;">Permanently deletes the team and all its capacity plans, snapshots, and presentations.</p>
+            </div>
+            <button class="btn btn-outline-danger btn-sm" onclick={deleteTeam}>Delete Team</button>
+          </div>
+        </div>
+        {/if}
       </div>
     {/if}
   {/if}

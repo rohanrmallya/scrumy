@@ -55,7 +55,7 @@ func main() {
 	presH := &handlers.PresentationsHandler{DB: database, Auth: authH}
 	jiraH := &handlers.JiraHandler{DB: database, Auth: authH}
 
-	registerTeamRoutes := func(prefix string) {
+	registerTeamRoutes := func(r chi.Router, prefix string) {
 		// Teams
 		r.Get(prefix, teamsH.List)
 		r.Post(prefix, teamsH.Create)
@@ -125,8 +125,8 @@ func main() {
 		r.Delete("/users/{userID}", usersH.Delete)
 
 		// Teams (current) + deprecated /plans aliases for backward compatibility
-		registerTeamRoutes("/teams")
-		registerTeamRoutes("/plans")
+		registerTeamRoutes(r, "/teams")
+		registerTeamRoutes(r, "/plans")
 	})
 
 	// ── Static frontend ──────────────────────────────────────────────────────
