@@ -242,12 +242,18 @@
       totalHoursLogged += hoursLogged;
       totalWorkLogs += filteredWorklogs.length;
 
+      const devTotalHours = devPlannedHours + devUnplannedHours;
+      const devPlannedPct = devTotalHours > 0 ? Math.round((devPlannedHours / devTotalHours) * 100) : 100;
+      const devUnplannedPct = devTotalHours > 0 ? Math.round((devUnplannedHours / devTotalHours) * 100) : 0;
+
       return {
         ...entry,
         hours_logged: hoursLogged,
         worklogs: filteredWorklogs,
         planned_hours: Math.round(devPlannedHours * 100) / 100,
         unplanned_hours: Math.round(devUnplannedHours * 100) / 100,
+        planned_pct: devPlannedPct,
+        unplanned_pct: devUnplannedPct,
       };
     }).filter(entry => entry.hours_logged > 0);
 
@@ -782,7 +788,7 @@
                             <span class="font-bold text-sm" style="color:var(--c-text);">{entry.author_name}</span>
                             {#if entry.planned_hours !== undefined && entry.unplanned_hours !== undefined}
                               <span class="text-xs text-muted" style="font-size:11px;">
-                                (Planned: <strong>{entry.planned_hours}h</strong> • Unplanned: <strong style="color:{entry.unplanned_hours > 0 ? '#f59f00' : 'inherit'};">{entry.unplanned_hours}h</strong>)
+                                (Planned: <strong>{entry.planned_hours}h ({entry.planned_pct ?? 0}%)</strong> • Unplanned: <strong style="color:{entry.unplanned_hours > 0 ? '#f59f00' : 'inherit'};">{entry.unplanned_hours}h ({entry.unplanned_pct ?? 0}%)</strong>)
                               </span>
                             {/if}
                             {#if uDelta}
