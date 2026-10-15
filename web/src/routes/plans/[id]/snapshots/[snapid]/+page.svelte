@@ -19,6 +19,151 @@
 
   let showAllWorklogs = $state(false);
   let expandedRefreshContributors = $state<Record<string, boolean>>({});
+  let selectedHistoryId = $state<string>('');
+
+  function initials(name: string) {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function avatarBg(name: string) {
+    const palette = [
+      ['#DBEAFE', '#2563EB'],
+      ['#F3E8FF', '#7C3AED'],
+      ['#DCFCE7', '#16A34A'],
+      ['#FFEDD5', '#EA580C'],
+      ['#FCE7F3', '#DB2777'],
+      ['#E0E7FF', '#4F46E5'],
+      ['#FEF3C7', '#D97706'],
+      ['#ECFDF5', '#0D9488'],
+    ];
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 997;
+    return palette[h % palette.length];
+  }
+
+  function formatHistoryDateTime(utcString: string) {
+    if (!utcString) return '—';
+    try {
+      const d = new Date(utcString);
+      if (isNaN(d.getTime())) return utcString;
+      const day = String(d.getDate()).padStart(2, '0');
+      const mon = d.toLocaleString('en-GB', { month: 'short' });
+      const year = d.getFullYear();
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      return `${day} ${mon} ${year}, ${hh}:${mm}`;
+    } catch {
+      return utcString;
+    }
+  }
+
+  function formatShortDay(utcString: string) {
+    if (!utcString) return '—';
+    try {
+      const d = new Date(utcString);
+      if (isNaN(d.getTime())) return utcString;
+      const day = d.getDate();
+      const mon = d.toLocaleString('en-GB', { month: 'short' });
+      return `${day} ${mon}`;
+    } catch {
+      return utcString;
+    }
+  }
+
+  function formatSprintRange(start: string, end: string) {
+    try {
+      const fmt = (s: string) => {
+        const d = new Date(s);
+        if (isNaN(d.getTime())) return s;
+        return `${String(d.getDate()).padStart(2, '0')} ${d.toLocaleString('en-GB', { month: 'short' })} ${d.getFullYear()}`;
+      };
+      return `${fmt(start)} – ${fmt(end)}`;
+    } catch {
+      return `${start} – ${end}`;
+    }
+  }
+
+  async function copyJql(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch { /* noop */ }
+  }
+
+  const historyDesc = $derived((snapshot?.refresh_history || []).slice());
+  const historyAsc = $derived(
+    (snapshot?.refresh_history || []).slice().sort(
+      (a, b) => new Date(a.refreshed_at).getTime() - new Date(b.refreshed_at).getTime()
+    )
+  );
+
+  const selectedHistory = $derived.by(() => {
+    const list = snapshot?.refresh_history || [];
+    if (list.length === 0) return null;
+    if (selectedHistoryId) {
+      const found = list.find((r) => r.id === selectedHistoryId);
+      if (found) return found;
+    }
+    return list[0];
+  });
+
+  const selectedHistoryPrev = $derived.by(() => {
+    const list = historyAsc;
+    if (!selectedHistory || list.length === 0) return null;
+    const idx = list.findIndex((r) => r.id === selectedHistory.id);
+    if (idx > 0) return list[idx - 1];
+    return null;
+  });
+
+  const selectedDeltas = $derived.by(() => {
+    if (!selectedHistory) return [];
+    const hasAll = !!snapshot?.data?.totals_all && !!snapshot?.data?.leaderboard_all;
+    const activeShowAll = showAllWorklogs && hasAll;
+    const base =
+      activeShowAll && selectedHistory.user_deltas_all
+        ? selectedHistory.user_deltas_all
+        : selectedHistory.user_deltas || [];
+    return [...base]
+      .filter((d) => d.hours_delta !== 0)
+      .sort((a, b) => b.hours_delta - a.hours_delta);
+  });
+
+  const historyChart = $derived.by(() => {
+    const L = 36, R = 36, T = 12, B = 28, W = 720, H = 235;
+    const PW = W - L - R;
+    const PH = H - T - B;
+    const raw = historyAsc.map((log) => ({
+      id: log.id,
+      label: formatShortDay(log.refreshed_at),
+      full: formatHistoryDateTime(log.refreshed_at),
+      total: log.new_hours_logged || 0,
+      delta: (log.new_hours_logged || 0) - (log.prev_hours_logged || 0),
+    }));
+    const maxTotal = Math.max(10, ...raw.map((p) => p.total)) * 1.15;
+    const maxDelta = Math.max(2, ...raw.map((p) => Math.abs(p.delta))) * 1.35;
+    const n = raw.length;
+    const xPos = (i: number) => (n === 1 ? L + PW / 2 : L + (i * PW) / Math.max(1, n - 1));
+    const yTot = (v: number) => T + PH - (Math.max(0, v) / maxTotal) * PH;
+    const pts = raw.map((p, i) => {
+      const x = xPos(i);
+      const y = yTot(p.total);
+      const bh = (Math.max(0, p.delta) / maxDelta) * PH;
+      const by = T + PH - bh;
+      return { ...p, x, y, barH: bh, barY: by };
+    });
+    const linePoints = pts.map((p) => `${p.x},${p.y}`).join(' ');
+    const grid = [0, 1, 2, 3, 4, 5].map((g) => {
+      const gy = T + (PH * g) / 5;
+      return {
+        y: gy,
+        left: String(Math.round(maxTotal * (1 - g / 5))),
+        right: (maxDelta * (1 - g / 5)).toFixed(0),
+      };
+    });
+    return { pts, maxTotal, maxDelta, linePoints, grid, L, R, T, B, W, H, PH };
+  });
 
   // Contributor Refresh Breakdown Modal State
   let showRefreshBreakdownModal = $state(false);
@@ -70,6 +215,10 @@
   let activityFilter = $state<'all' | 'planned' | 'unplanned'>('all');
   let togglingIssueKey = $state<string>('');
 
+  let activeTab = $state<'overview' | 'issues' | 'history'>('overview');
+  let issueSearchQuery = $state('');
+  let issueClassificationFilter = $state<'all' | 'planned' | 'unplanned'>('all');
+
   // Lookup map for issues by key
   const issueMap = $derived.by(() => {
     const map: Record<string, any> = {};
@@ -79,6 +228,20 @@
       }
     }
     return map;
+  });
+
+  const filteredIssues = $derived.by(() => {
+    const issues = snapshot?.data?.issues || [];
+    return issues.filter((issue) => {
+      if (issueClassificationFilter === 'planned' && issue.is_unplanned) return false;
+      if (issueClassificationFilter === 'unplanned' && !issue.is_unplanned) return false;
+      if (issueSearchQuery.trim()) {
+        const q = issueSearchQuery.trim().toLowerCase();
+        const hay = `${issue.key} ${issue.summary || ''} ${issue.status || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
   });
 
   // Planned vs Unplanned Summary Metrics
@@ -568,50 +731,73 @@
     </div>
   {:else if snapshot}
     <!-- Back Navigation Link -->
-    <div style="margin-bottom: 20px;">
-      <a href="/plans/{planID}" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:6px;">
-        ← Back to Plan Workspace
+    <div style="margin-bottom: 10px;">
+      <a href="/plans/{planID}" style="display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--c-text-2); font-weight:500;">
+        <span style="font-size:15px;">←</span> Back to Sprints
       </a>
     </div>
 
     <!-- Header Actions Panel -->
-    <div class="flex justify-between items-center" style="margin-bottom: 24px; gap: 16px; flex-wrap: wrap;">
+    <div class="flex justify-between items-center" style="margin-bottom: 18px; gap: 16px; flex-wrap: wrap;">
       <div>
-        <h1 class="text-2xl font-bold">{snapshot.name}</h1>
-        <p class="text-xs text-muted" style="margin-top:4px; display:flex; align-items:center; gap:6px;">
-          Range: {snapshot.start_date} to {snapshot.end_date}
+        <h1 style="font-size:28px; font-weight:800; letter-spacing:-0.02em; margin:0; color:#11142b;">{snapshot.name.toLowerCase().endsWith('retro') ? snapshot.name : `${snapshot.name} Retro`}</h1>
+        <p style="margin-top:4px; display:flex; align-items:center; gap:8px; font-size:13px; color:var(--c-text-3);">
+          {formatSprintRange(snapshot.start_date, snapshot.end_date)}
           {#if showAllWorklogs && snapshot.data.totals_all}
-            <span class="badge badge-warning" style="font-size:9px; padding:1px 6px; text-transform:none; font-weight:normal; letter-spacing:0;">all worklogs</span>
+            <span style="font-size:11px; padding:2px 8px; border-radius:999px; background:var(--c-warning-lt); color:#b45309; font-weight:500;">all worklogs</span>
           {:else}
-            <span class="badge badge-default" style="font-size:9px; padding:1px 6px; text-transform:none; font-weight:normal; letter-spacing:0;">filtered worklogs</span>
+            <span style="font-size:11px; padding:2px 8px; border-radius:999px; background:var(--c-surface-2); color:var(--c-text-2); font-weight:500;">filtered worklogs</span>
           {/if}
         </p>
       </div>
-      <div class="flex gap-2">
-        <button class="btn btn-secondary btn-sm" onclick={exportToCSV} style="display:inline-flex; align-items:center; gap:6px;">
-          📥 Export to CSV
+      <div class="flex gap-2" style="flex-wrap:wrap;">
+        <button onclick={exportToCSV} style="display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--c-border-2); border-radius:8px; padding:8px 14px; font-size:13px; font-weight:500; color:var(--c-text);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export to CSV
         </button>
         {#if plan?.is_admin}
-          <button class="btn btn-secondary btn-sm" onclick={openEditSnapshot}>
-            ✎ Edit Settings
+          <button onclick={openEditSnapshot} style="display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--c-border-2); border-radius:8px; padding:8px 14px; font-size:13px; font-weight:500; color:var(--c-text);">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+            Edit Settings
           </button>
-          <button class="btn btn-secondary btn-sm" onclick={refreshSnapshot} disabled={refreshing}>
-            {refreshing ? 'Refreshing...' : '🔄 Refresh'}
+          <button onclick={refreshSnapshot} disabled={refreshing} style="display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--c-border-2); border-radius:8px; padding:8px 14px; font-size:13px; font-weight:500; color:var(--c-text);">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
-          <button class="btn btn-outline-danger btn-sm" onclick={deleteSnapshot} disabled={deleting}>
-            {deleting ? 'Deleting...' : '✕ Delete'}
+          <button onclick={deleteSnapshot} disabled={deleting} style="display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid #fca5a5; border-radius:8px; padding:8px 18px; font-size:13px; font-weight:500; color:#dc2626;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            {deleting ? 'Deleting...' : 'Delete'}
           </button>
         {/if}
-        <button class="btn btn-primary btn-sm" onclick={createRetroFromSnapshot}>
-          🎤 Create Retro Presentation
-        </button>
       </div>
     </div>
 
-    <!-- Layout Container -->
+    <!-- Snapshot Tabs -->
+    <div class="flex gap-6" style="border-bottom:1px solid var(--c-border); margin-bottom:20px; padding-bottom:0;">
+      <button
+        class="tab-btn {activeTab === 'overview' ? 'active' : ''}"
+        onclick={() => activeTab = 'overview'}
+      >
+        <span style="display:inline-flex; align-items:center; gap:6px;"><span style="font-size:13px;">📊</span> Overview</span>
+      </button>
+      <button
+        class="tab-btn {activeTab === 'issues' ? 'active' : ''}"
+        onclick={() => activeTab = 'issues'}
+      >
+        <span style="display:inline-flex; align-items:center; gap:6px;"><span style="font-size:13px;">📋</span> Issues ({snapshot.data.issues?.length || 0})</span>
+      </button>
+      <button
+        class="tab-btn {activeTab === 'history' ? 'active' : ''}"
+        onclick={() => { activeTab = 'history'; if (!selectedHistoryId && snapshot?.refresh_history?.[0]) selectedHistoryId = snapshot.refresh_history[0].id; }}
+      >
+        <span style="display:inline-flex; align-items:center; gap:6px;"><span style="font-size:13px;">🔄</span> Snapshot History ({snapshot.refresh_history?.length || 0})</span>
+      </button>
+    </div>
+
+    <!-- Tab Content -->
     <div style="display:flex; flex-direction:column; gap:24px;">
-      
-      <!-- Metrics Summary Cards -->
+      {#if activeTab === 'overview'}
+<!-- Metrics Summary Cards -->
       <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
         <div style="background:var(--c-surface); padding:20px; border-radius:10px; border:1px solid var(--c-border); box-shadow:var(--shadow-sm);">
           <p class="text-xs text-muted font-semibold" style="text-transform:uppercase; letter-spacing:0.05em; font-size:10px;">SP Burned</p>
@@ -631,7 +817,8 @@
         </div>
       </div>
 
-      <!-- Planned vs. Unplanned Work Allocation Banner -->
+      
+<!-- Planned vs. Unplanned Work Allocation Banner -->
       <div style="background:var(--c-surface); padding:20px; border-radius:10px; border:1px solid var(--c-border); box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:14px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
           <div>
@@ -667,10 +854,8 @@
         </div>
       </div>
 
-      <!-- Leaderboard and Insights Block -->
-      <div style="display:grid; grid-template-columns: 1fr; gap:24px; align-items:start;" class="grid-layout">
-        
-        <!-- Logged Hours Leaderboard Accordion Card -->
+      
+      <!-- Logged Hours Leaderboard Accordion Card -->
         <div class="card">
           <div class="card-header" style="display:flex; flex-direction:column; gap:12px; align-items:stretch; padding:16px 20px;">
             <div class="flex justify-between items-center" style="flex-wrap:wrap; gap:12px;">
@@ -893,9 +1078,8 @@
           </div>
         </div>
 
-        <!-- Right Column Panel (Insights & History) -->
-        <div style="display:flex; flex-direction:column; gap:24px;">
-          <!-- Info Insights card below or adjacent -->
+        
+      <!-- Info Insights card below or adjacent -->
           <div style="background:var(--c-surface); border-radius:10px; padding:20px; border:1px solid var(--c-border); box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:12px;">
             <h3 class="font-semibold text-sm" style="display:flex; align-items:center; gap:6px;">
               <span>ℹ️</span> Snapshot Insights
@@ -918,166 +1102,67 @@
             </div>
           </div>
 
-          <!-- Refresh History Card -->
-          <div class="card">
-            <div class="card-header" style="padding:16px 20px; border-bottom: 1px solid var(--c-border-2); display:flex; justify-content:space-between; align-items:center;">
-              <h3 class="font-semibold text-sm" style="margin:0; display:flex; align-items:center; gap:8px;">
-                <span>🔄</span> Refresh History
-              </h3>
-              {#if snapshot.refresh_history && snapshot.refresh_history.length > 0}
-                <button 
-                  class="btn btn-secondary btn-sm" 
-                  style="font-size:11px; padding:4px 8px; display:inline-flex; align-items:center; gap:4px;"
-                  onclick={() => openRefreshBreakdown()}
-                  title="View full contributor breakdown across refreshes"
+          
+      {:else if activeTab === 'issues'}
+<!-- Issue List Table Card -->
+      <div class="card">
+        <div class="card-header" style="padding:16px 20px; display:flex; flex-direction:column; gap:12px; align-items:stretch;">
+          <div class="flex justify-between items-center" style="flex-wrap:wrap; gap:12px;">
+            <h3 class="font-semibold text-sm" style="margin:0; display:flex; align-items:center; gap:8px;">
+              <span>📋</span> Issues in Snapshot ({snapshot.data.issues?.length || 0})
+            </h3>
+            <div class="flex items-center gap-2" style="flex-wrap:wrap;">
+              <div style="display:inline-flex; background:var(--c-surface-2); border-radius:6px; padding:2px; border:1px solid var(--c-border-2);">
+                <button
+                  type="button"
+                  style="padding:4px 10px; font-size:11px; font-weight:600; border-radius:4px; border:none; cursor:pointer; background:{issueClassificationFilter === 'all' ? 'var(--c-surface)' : 'transparent'}; color:{issueClassificationFilter === 'all' ? 'var(--c-text)' : 'var(--c-text-3)'}; box-shadow:{issueClassificationFilter === 'all' ? 'var(--shadow-sm)' : 'none'};"
+                  onclick={() => issueClassificationFilter = 'all'}
                 >
-                  <span>👥 Contributor Breakdown</span>
+                  All ({snapshot.data.issues?.length || 0})
                 </button>
-              {/if}
-            </div>
-            <div class="card-body" style="padding: 16px 20px; display:flex; flex-direction:column; gap:16px; max-height:420px; overflow-y:auto; background:var(--c-bg);">
-              {#if !snapshot.refresh_history || snapshot.refresh_history.length === 0}
-                <p class="text-xs text-muted" style="text-align:center; padding:12px 0; margin:0;">No refreshes recorded yet.</p>
-              {:else}
-                <div style="display:flex; flex-direction:column; gap:16px;">
-                  {#each snapshot.refresh_history as log}
-                    {@const spDiff = log.new_story_points - log.prev_story_points}
-                    {@const hoursDiff = log.new_hours_logged - log.prev_hours_logged}
-                    {@const worklogsDiff = log.new_worklogs_count - log.prev_worklogs_count}
-                    {@const issuesDiff = log.new_issues_count - log.prev_issues_count}
-                    {@const hasChanges = spDiff !== 0 || hoursDiff !== 0 || worklogsDiff !== 0 || issuesDiff !== 0}
-                    {@const logDeltas = (showAllWorklogs && log.user_deltas_all ? log.user_deltas_all : log.user_deltas) || []}
-                    {@const activeContributors = logDeltas.filter(d => d.hours_delta !== 0)}
-
-                    <div style="background:var(--c-surface); border:1px solid var(--c-border); border-radius:8px; padding:14px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:10px;">
-                      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
-                        <span class="font-bold text-xs" style="color:var(--c-text);">{formatDateTime(log.refreshed_at)}</span>
-                        <div style="display:flex; align-items:center; gap:6px;">
-                          {#if hasChanges}
-                            <span class="badge badge-success" style="font-size:9px; padding:1px 6px;">Changes</span>
-                          {:else}
-                            <span class="badge badge-default" style="font-size:9px; padding:1px 6px; background:var(--c-surface-2); color:var(--c-text-3);">No changes</span>
-                          {/if}
-                          <button 
-                            class="btn btn-secondary btn-sm" 
-                            style="padding:2px 8px; font-size:10px; height:22px; display:inline-flex; align-items:center; gap:4px;"
-                            onclick={() => openRefreshBreakdown(log.id)}
-                            title="Inspect who added hours in this refresh"
-                          >
-                            <span>🔍 Breakdown</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:11px; border-top:1px solid var(--c-border-2); padding-top:8px;">
-                        
-                        <!-- Story Points -->
-                        <div style="display:flex; flex-direction:column; gap:2px;">
-                          <span class="text-muted">Story Points:</span>
-                          <span style="font-weight:600; display:inline-flex; align-items:center; gap:4px;">
-                            {log.new_story_points} SP
-                            {#if spDiff > 0}
-                              <span style="color:var(--c-success); font-weight:700;">(+{spDiff.toFixed(1)})</span>
-                            {:else if spDiff < 0}
-                              <span style="color:var(--c-danger); font-weight:700;">({spDiff.toFixed(1)})</span>
-                            {/if}
-                          </span>
-                        </div>
-
-                        <!-- Logged Hours -->
-                        <div style="display:flex; flex-direction:column; gap:2px;">
-                          <span class="text-muted">Hours Logged:</span>
-                          <span style="font-weight:600; display:inline-flex; align-items:center; gap:4px;">
-                            {log.new_hours_logged.toFixed(1)} hrs
-                            {#if hoursDiff > 0}
-                              <span style="color:var(--c-success); font-weight:700;">(+{hoursDiff.toFixed(1)})</span>
-                            {:else if hoursDiff < 0}
-                              <span style="color:var(--c-danger); font-weight:700;">({hoursDiff.toFixed(1)})</span>
-                            {/if}
-                          </span>
-                        </div>
-
-                        <!-- Closed Issues -->
-                        <div style="display:flex; flex-direction:column; gap:2px;">
-                          <span class="text-muted">Issues Closed:</span>
-                          <span style="font-weight:600; display:inline-flex; align-items:center; gap:4px;">
-                            {log.new_issues_count}
-                            {#if issuesDiff > 0}
-                              <span style="color:var(--c-success); font-weight:700;">(+{issuesDiff})</span>
-                            {:else if issuesDiff < 0}
-                              <span style="color:var(--c-danger); font-weight:700;">({issuesDiff})</span>
-                            {/if}
-                          </span>
-                        </div>
-
-                        <!-- Worklogs count -->
-                        <div style="display:flex; flex-direction:column; gap:2px;">
-                          <span class="text-muted">Worklogs count:</span>
-                          <span style="font-weight:600; display:inline-flex; align-items:center; gap:4px;">
-                            {log.new_worklogs_count}
-                            {#if worklogsDiff > 0}
-                              <span style="color:var(--c-success); font-weight:700;">(+{worklogsDiff})</span>
-                            {:else if worklogsDiff < 0}
-                              <span style="color:var(--c-danger); font-weight:700;">({worklogsDiff})</span>
-                            {/if}
-                          </span>
-                        </div>
-
-                      </div>
-
-                      <!-- Inline Contributor Changes Accordion -->
-                      {#if activeContributors.length > 0}
-                        {@const isContrExpanded = !!expandedRefreshContributors[log.id]}
-                        <div style="border-top:1px solid var(--c-border-2); padding-top:8px;">
-                          <button 
-                            onclick={() => expandedRefreshContributors[log.id] = !isContrExpanded}
-                            style="width:100%; display:flex; justify-content:space-between; align-items:center; background:transparent; border:none; padding:4px 0; cursor:pointer; font-size:11px; color:var(--c-primary); font-weight:600; text-align:left;"
-                          >
-                            <span style="display:inline-flex; align-items:center; gap:4px;">
-                              <span>👤</span> {activeContributors.length} contributor{activeContributors.length === 1 ? '' : 's'} changed hours
-                            </span>
-                            <span style="font-size:9px; transition:transform 150ms ease; transform:rotate({isContrExpanded ? '90deg' : '0deg'});">▶</span>
-                          </button>
-
-                          {#if isContrExpanded}
-                            <div style="margin-top:6px; display:flex; flex-direction:column; gap:4px; max-height:160px; overflow-y:auto; padding-right:2px;">
-                              {#each activeContributors as contr}
-                                <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; background:var(--c-bg); padding:5px 8px; border-radius:4px; border:1px solid var(--c-border);">
-                                  <span style="font-weight:600; color:var(--c-text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px;" title={contr.author_name}>
-                                    {contr.author_name}
-                                  </span>
-                                  <span style="display:inline-flex; align-items:center; gap:4px; font-weight:600;">
-                                    <span class="text-muted" style="font-size:10px; font-weight:normal;">{contr.prev_hours_logged.toFixed(1)} → {contr.new_hours_logged.toFixed(1)}</span>
-                                    <span style="color:{contr.hours_delta > 0 ? 'var(--c-success)' : 'var(--c-danger)'}; font-size:11px; font-weight:700;">
-                                      {contr.hours_delta > 0 ? '+' : ''}{contr.hours_delta.toFixed(1)} hrs
-                                    </span>
-                                  </span>
-                                </div>
-                              {/each}
-                            </div>
-                          {/if}
-                        </div>
-                      {/if}
-                    </div>
-                  {/each}
-                </div>
-              {/if}
+                <button
+                  type="button"
+                  style="padding:4px 10px; font-size:11px; font-weight:600; border-radius:4px; border:none; cursor:pointer; background:{issueClassificationFilter === 'planned' ? 'var(--c-surface)' : 'transparent'}; color:{issueClassificationFilter === 'planned' ? 'var(--c-primary)' : 'var(--c-text-3)'}; box-shadow:{issueClassificationFilter === 'planned' ? 'var(--shadow-sm)' : 'none'};"
+                  onclick={() => issueClassificationFilter = 'planned'}
+                >
+                  📋 Planned
+                </button>
+                <button
+                  type="button"
+                  style="padding:4px 10px; font-size:11px; font-weight:600; border-radius:4px; border:none; cursor:pointer; background:{issueClassificationFilter === 'unplanned' ? 'var(--c-surface)' : 'transparent'}; color:{issueClassificationFilter === 'unplanned' ? '#f59f00' : 'var(--c-text-3)'}; box-shadow:{issueClassificationFilter === 'unplanned' ? 'var(--shadow-sm)' : 'none'};"
+                  onclick={() => issueClassificationFilter = 'unplanned'}
+                >
+                  ⚡ Unplanned
+                </button>
+              </div>
+              <span class="badge badge-primary">{filteredIssues.length} shown</span>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- Issue List Table Card -->
-      <div class="card">
-        <div class="card-header" style="padding:16px 20px;">
-          <h3 class="font-semibold text-sm" style="margin:0; display:flex; align-items:center; gap:8px;">
-            <span>📋</span> Issues in Snapshot ({snapshot.data.issues?.length || 0})
-          </h3>
+          <div style="position:relative; width:100%;">
+            <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); font-size:14px; color:var(--c-text-3);">🔍</span>
+            <input
+              type="text"
+              class="input"
+              placeholder="Search by key, summary, or status..."
+              bind:value={issueSearchQuery}
+              style="padding-left:36px; background:var(--c-bg);"
+            />
+            {#if issueSearchQuery}
+              <button
+                onclick={() => issueSearchQuery = ''}
+                style="position:absolute; right:12px; top:50%; transform:translateY(-50%); background:none; border:none; font-size:12px; color:var(--c-text-3); cursor:pointer;"
+              >
+                ✕
+              </button>
+            {/if}
+          </div>
         </div>
         
         <div class="card-body" style="padding:0;">
           {#if !snapshot.data.issues || snapshot.data.issues.length === 0}
             <p class="text-xs text-muted" style="padding:30px 0; text-align:center;">No closed issues found in this range.</p>
+          {:else if filteredIssues.length === 0}
+            <p class="text-xs text-muted" style="padding:30px 0; text-align:center;">No issues match your search / filter.</p>
           {:else}
             <div style="max-height:400px; overflow-y:auto;">
               <table style="width:100%; border-collapse:collapse; text-align:left; font-size:12px;">
@@ -1092,7 +1177,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {#each snapshot.data.issues as issue}
+                  {#each filteredIssues as issue}
                     <tr style="border-bottom:1px solid var(--c-border); background:var(--c-surface);">
                       <td style="padding:12px 16px; font-weight:600; white-space:nowrap;">
                         {#if plan?.jira_url}
@@ -1144,7 +1229,303 @@
           {/if}
         </div>
       </div>
+      {:else if activeTab === 'history'}
+        {@const latestH = historyDesc[0] ?? null}
+        {@const latestSpDiff = latestH ? (latestH.new_story_points - latestH.prev_story_points) : 0}
+        {@const latestHoursDiff = latestH ? (latestH.new_hours_logged - latestH.prev_hours_logged) : 0}
+        {@const latestIssuesDiff = latestH ? (latestH.new_issues_count - latestH.prev_issues_count) : 0}
+        {@const latestWlDiff = latestH ? (latestH.new_worklogs_count - latestH.prev_worklogs_count) : 0}
+        {@const chartPts = historyChart.pts}
+        {@const chartMaxTotal = historyChart.maxTotal}
+        {@const chartMaxDelta = historyChart.maxDelta}
+        {@const selSpDiff = selectedHistory ? (selectedHistory.new_story_points - selectedHistory.prev_story_points) : 0}
+        {@const selHoursDiff = selectedHistory ? (selectedHistory.new_hours_logged - selectedHistory.prev_hours_logged) : 0}
+        {@const selIssuesDiff = selectedHistory ? (selectedHistory.new_issues_count - selectedHistory.prev_issues_count) : 0}
+        {@const selWlDiff = selectedHistory ? (selectedHistory.new_worklogs_count - selectedHistory.prev_worklogs_count) : 0}
+        {@const selMaxDelta = Math.max(0.1, ...selectedDeltas.map(d => Math.abs(d.hours_delta)))}
+        <div class="history-layout">
+          <!-- LEFT COLUMN -->
+          <div style="display:flex; flex-direction:column; gap:16px; min-width:0;">
+            <!-- Chart + summary card -->
+            <div style="background:#fff; border:1px solid var(--c-border); border-radius:12px; padding:18px 20px 16px 20px; box-shadow:var(--shadow-sm);">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+                <div>
+                  <h3 style="margin:0; font-size:15px; font-weight:700; color:#11142b;">Hours logged per refresh</h3>
+                  <p style="margin:3px 0 0 0; font-size:12px; color:var(--c-text-3);">Total hours logged (cumulative) and hours added in each refresh (delta).</p>
+                </div>
+                <div style="display:flex; align-items:center; gap:16px; font-size:11px; color:var(--c-text-2); padding-top:4px;">
+                  <span style="display:inline-flex; align-items:center; gap:6px;">
+                    <svg width="28" height="8"><line x1="2" y1="4" x2="20" y2="4" stroke="#2f6bff" stroke-width="2"/><circle cx="6" cy="4" r="3" fill="#2f6bff"/><circle cx="16" cy="4" r="3" fill="#2f6bff"/></svg>
+                    Total hours (cumulative)
+                  </span>
+                  <span style="display:inline-flex; align-items:center; gap:6px;">
+                    <span style="width:14px; height:12px; border-radius:2px; background:#bfdbfe; display:inline-block;"></span>
+                    Hours added (this refresh)
+                  </span>
+                </div>
+              </div>
 
+              {#if chartPts.length === 0}
+                <p class="text-xs text-muted" style="text-align:center; padding:30px 0;">No refreshes recorded yet.</p>
+              {:else}
+                <div style="position:relative; margin-top:8px;">
+                  <span style="position:absolute; left:0; top:0; font-size:11px; color:var(--c-text-3);">Total hours</span>
+                  <span style="position:absolute; right:0; top:0; font-size:11px; color:var(--c-text-3);">Hours added</span>
+                  <svg viewBox="0 0 {historyChart.W} {historyChart.H}" style="width:100%; height:auto; display:block; margin-top:18px;" role="img" aria-label="Hours logged per refresh chart">
+                    <!-- gridlines -->
+                    {#each historyChart.grid as g}
+                      <line x1={historyChart.L} y1={g.y} x2={historyChart.W - historyChart.R} y2={g.y} stroke="#eef0f6" stroke-width="1" />
+                      <text x={historyChart.L - 6} y={g.y + 4} text-anchor="end" font-size="10" fill="#9ca3af">{g.left}</text>
+                      <text x={historyChart.W - historyChart.R + 6} y={g.y + 4} text-anchor="start" font-size="10" fill="#9ca3af">{g.right}</text>
+                    {/each}
+                    <!-- bars (deltas) -->
+                    {#each chartPts as p}
+                      {#if p.delta > 0.001}
+                        <rect x={p.x - 22} y={p.barY} width="44" height={Math.max(2, p.barH)} rx="3" fill="#bfdbfe" opacity="0.95" />
+                        <text x={p.x} y={p.barY + 16} text-anchor="middle" font-size="11" font-weight="600" fill="#2563eb">{p.delta.toFixed(1)}</text>
+                      {/if}
+                    {/each}
+                    <!-- cumulative line -->
+                    <polyline
+                      points={historyChart.linePoints}
+                      fill="none" stroke="#2f6bff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"
+                    />
+                    {#each chartPts as p}
+                      <text x={p.x} y={p.y - 10} text-anchor="middle" font-size="11" font-weight="600" fill="#2f6bff">{p.total.toFixed(1)}</text>
+                      <circle cx={p.x} cy={p.y} r="5" fill="#2f6bff" stroke="#fff" stroke-width="2" />
+                    {/each}
+                    <!-- x labels -->
+                    {#each chartPts as p}
+                      <text x={p.x} y={historyChart.T + historyChart.PH + 20} text-anchor="middle" font-size="11" fill="#9ca3af">{p.label}</text>
+                    {/each}
+                  </svg>
+                </div>
+              {/if}
+
+              <!-- 4 summary tiles (latest refresh) -->
+              {#if latestH}
+                <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-top:14px;">
+                  <div style="border:1px solid var(--c-border); border-radius:10px; padding:12px 14px; background:#fff;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span style="width:32px; height:32px; border-radius:50%; background:#f1f0ff; display:inline-flex; align-items:center; justify-content:center; font-size:16px;">📦</span>
+                      <span style="font-size:12px; color:var(--c-text-2);">Story points</span>
+                    </div>
+                    <div style="font-size:24px; font-weight:800; margin-top:6px; color:#11142b;">{latestH.new_story_points}</div>
+                    <div style="font-size:11px; color:var(--c-success); font-weight:600; margin-top:2px;">↑ +{latestSpDiff.toFixed(0)} since last refresh</div>
+                  </div>
+                  <div style="border:1px solid var(--c-border); border-radius:10px; padding:12px 14px; background:#fff;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span style="width:32px; height:32px; border-radius:50%; background:#e8f3ff; display:inline-flex; align-items:center; justify-content:center; font-size:16px;">🕐</span>
+                      <span style="font-size:12px; color:var(--c-text-2);">Hours logged</span>
+                    </div>
+                    <div style="font-size:24px; font-weight:800; margin-top:6px; color:#11142b;">{latestH.new_hours_logged.toFixed(1)}h</div>
+                    <div style="font-size:11px; color:var(--c-success); font-weight:600; margin-top:2px;">↑ +{latestHoursDiff.toFixed(1)}h since last refresh</div>
+                  </div>
+                  <div style="border:1px solid var(--c-border); border-radius:10px; padding:12px 14px; background:#fff;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span style="width:32px; height:32px; border-radius:50%; background:#e9f9ef; display:inline-flex; align-items:center; justify-content:center; font-size:16px; color:#16a34a;">✓</span>
+                      <span style="font-size:12px; color:var(--c-text-2);">Issues closed</span>
+                    </div>
+                    <div style="font-size:24px; font-weight:800; margin-top:6px; color:#11142b;">{latestH.new_issues_count}</div>
+                    <div style="font-size:11px; color:var(--c-success); font-weight:600; margin-top:2px;">↑ +{latestIssuesDiff} since last refresh</div>
+                  </div>
+                  <div style="border:1px solid var(--c-border); border-radius:10px; padding:12px 14px; background:#fff;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span style="width:32px; height:32px; border-radius:50%; background:#fff6e8; display:inline-flex; align-items:center; justify-content:center; font-size:16px;">📄</span>
+                      <span style="font-size:12px; color:var(--c-text-2);">Worklogs</span>
+                    </div>
+                    <div style="font-size:24px; font-weight:800; margin-top:6px; color:#11142b;">{latestH.new_worklogs_count}</div>
+                    <div style="font-size:11px; color:var(--c-success); font-weight:600; margin-top:2px;">↑ +{latestWlDiff} since last refresh</div>
+                  </div>
+                </div>
+              {/if}
+            </div>
+
+            <!-- Refresh history table -->
+            <div style="background:#fff; border:1px solid var(--c-border); border-radius:12px; box-shadow:var(--shadow-sm); overflow:hidden;">
+              <div style="padding:16px 20px 4px 20px;">
+                <h3 style="margin:0; font-size:15px; font-weight:700; color:#11142b;">Refresh history</h3>
+                <p style="margin:3px 0 0 0; font-size:12px; color:var(--c-text-3);">All snapshot refreshes for this sprint</p>
+              </div>
+              {#if historyDesc.length === 0}
+                <p class="text-xs text-muted" style="text-align:center; padding:24px 0;">No refreshes recorded yet.</p>
+              {:else}
+                <div style="overflow-x:auto; margin-top:8px;">
+                  <table style="width:100%; border-collapse:collapse; font-size:12px; min-width:720px;">
+                    <thead>
+                      <tr style="color:var(--c-text-3); font-size:11px; font-weight:500; text-align:left;">
+                        <th style="padding:8px 12px 8px 20px; font-weight:500;">Date & time</th>
+                        <th style="padding:8px 12px; font-weight:500;">Total hours<br/>(cumulative)</th>
+                        <th style="padding:8px 12px; font-weight:500;">Hours added<br/>(delta)</th>
+                        <th style="padding:8px 12px; font-weight:500;">Story points</th>
+                        <th style="padding:8px 12px; font-weight:500;">Issues closed</th>
+                        <th style="padding:8px 12px; font-weight:500;">Worklogs</th>
+                        <th style="padding:8px 12px; font-weight:500;">Contributors</th>
+                        <th style="padding:8px 20px 8px 12px; font-weight:500; text-align:right;">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each historyDesc as log}
+                        {@const spD = log.new_story_points - log.prev_story_points}
+                        {@const hD = log.new_hours_logged - log.prev_hours_logged}
+                        {@const wlD = log.new_worklogs_count - log.prev_worklogs_count}
+                        {@const isD = log.new_issues_count - log.prev_issues_count}
+                        {@const deltas = ((showAllWorklogs && log.user_deltas_all) ? log.user_deltas_all : log.user_deltas) || []}
+                        {@const changed = deltas.filter(d => d.hours_delta !== 0)}
+                        {@const avatarList = [...deltas].sort((a,b) => b.hours_delta - a.hours_delta).slice(0, 4)}
+                        {@const overflow = Math.max(0, deltas.length - 4)}
+                        {@const isSel = selectedHistory?.id === log.id}
+                        <tr
+                          onclick={() => selectedHistoryId = log.id}
+                          style="border-top:1px solid var(--c-border); cursor:pointer; background:{isSel ? '#eef4ff' : '#fff'}; box-shadow:{isSel ? 'inset 3px 0 0 #2f6bff' : 'none'};"
+                        >
+                          <td style="padding:12px 12px 12px 20px; font-weight:700; white-space:nowrap; color:#11142b;">{formatHistoryDateTime(log.refreshed_at)}</td>
+                          <td style="padding:12px; font-weight:500; white-space:nowrap;">{log.new_hours_logged.toFixed(1)}h</td>
+                          <td style="padding:12px; font-weight:700; color:var(--c-success); white-space:nowrap;">+{hD.toFixed(1)}h</td>
+                          <td style="padding:12px; white-space:nowrap;">{log.new_story_points} <span style="color:var(--c-success); font-weight:700; margin-left:4px;">+{spD.toFixed(0)}</span></td>
+                          <td style="padding:12px; white-space:nowrap;">{log.new_issues_count} <span style="color:var(--c-success); font-weight:700; margin-left:4px;">+{isD}</span></td>
+                          <td style="padding:12px; white-space:nowrap;">{log.new_worklogs_count} <span style="color:var(--c-success); font-weight:700; margin-left:4px;">+{wlD}</span></td>
+                          <td style="padding:12px; white-space:nowrap;">
+                            {#if deltas.length === 0}
+                              <span class="text-muted" style="font-size:11px;">—</span>
+                            {:else}
+                              <span style="display:inline-flex; align-items:center;">
+                                {#each avatarList as d, ai}
+                                  {@const av = avatarBg(d.author_name)}
+                                  <span title={d.author_name} style="width:24px; height:24px; border-radius:50%; background:{av[0]}; color:{av[1]}; font-size:9px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; border:2px solid #fff; margin-left:{ai === 0 ? '0' : '-8px'};">{initials(d.author_name)}</span>
+                                {/each}
+                                {#if overflow > 0}
+                                  <span style="width:24px; height:24px; border-radius:50%; background:var(--c-surface-2); color:var(--c-text-2); font-size:9px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; border:2px solid #fff; margin-left:-8px;">+{overflow}</span>
+                                {/if}
+                              </span>
+                            {/if}
+                          </td>
+                          <td style="padding:12px 20px 12px 12px; text-align:right; color:var(--c-text-2);">›</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              {/if}
+            </div>
+          </div>
+
+          <!-- RIGHT DETAIL PANEL -->
+          <div style="min-width:0;">
+            {#if selectedHistory}
+              {@const prevLabel = selectedHistoryPrev ? formatHistoryDateTime(selectedHistoryPrev.refreshed_at) : null}
+              <div style="background:#fff; border:1px solid var(--c-border); border-radius:12px; padding:18px 18px 16px 18px; box-shadow:var(--shadow-sm); position:sticky; top:72px;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                  <div>
+                    <div style="font-size:16px; font-weight:800; color:#11142b;">{formatHistoryDateTime(selectedHistory.refreshed_at)}</div>
+                    <div style="font-size:12px; color:var(--c-text-3); margin-top:2px;">Compared to {prevLabel ?? formatHistoryDateTime(historyAsc[0]?.refreshed_at ?? selectedHistory.refreshed_at)}</div>
+                  </div>
+                  <button onclick={() => selectedHistoryId = ''} aria-label="Clear selection" style="background:none; border:none; font-size:16px; color:var(--c-text-3); cursor:pointer; padding:2px 6px;">✕</button>
+                </div>
+
+                <div style="border-top:1px solid var(--c-border); margin-top:12px; padding-top:14px;">
+                  <div style="font-size:13px; font-weight:700; color:#11142b; margin-bottom:10px;">Change summary</div>
+                  <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;">
+                    <div style="border:1px solid var(--c-border); border-radius:8px; padding:10px 8px; text-align:left;">
+                      <div style="font-size:16px; color:#8b5cf6;">⬢</div>
+                      <div style="font-size:15px; font-weight:800; margin-top:4px;">+{selSpDiff.toFixed(0)}</div>
+                      <div style="font-size:10px; color:var(--c-text-2); line-height:1.3;">Story points</div>
+                    </div>
+                    <div style="border:1px solid var(--c-border); border-radius:8px; padding:10px 8px; text-align:left;">
+                      <div style="font-size:16px; color:#2563eb;">🕐</div>
+                      <div style="font-size:15px; font-weight:800; margin-top:4px;">+{selHoursDiff.toFixed(1)}h</div>
+                      <div style="font-size:10px; color:var(--c-text-2); line-height:1.3;">Hours logged</div>
+                    </div>
+                    <div style="border:1px solid var(--c-border); border-radius:8px; padding:10px 8px; text-align:left;">
+                      <div style="font-size:16px; color:#16a34a;">✓</div>
+                      <div style="font-size:15px; font-weight:800; margin-top:4px;">+{selIssuesDiff}</div>
+                      <div style="font-size:10px; color:var(--c-text-2); line-height:1.3;">Issues closed</div>
+                    </div>
+                    <div style="border:1px solid var(--c-border); border-radius:8px; padding:10px 8px; text-align:left;">
+                      <div style="font-size:16px; color:#f59e0b;">📄</div>
+                      <div style="font-size:15px; font-weight:800; margin-top:4px;">+{selWlDiff}</div>
+                      <div style="font-size:10px; color:var(--c-text-2); line-height:1.3;">Worklogs</div>
+                    </div>
+                  </div>
+
+                  {#if selectedDeltas.length > 0}
+                    {@const top1 = selectedDeltas[0]}
+                    {@const top2 = selectedDeltas[1]}
+                    <div style="margin-top:12px; background:#eef4ff; border:1px solid #dbe7ff; border-radius:8px; padding:10px 12px; display:flex; gap:10px; align-items:flex-start;">
+                      <span style="color:#2563eb; font-size:15px; margin-top:1px;">↗</span>
+                      <div style="font-size:12px; line-height:1.5;">
+                        <div style="font-weight:700; color:#2563eb;">{selectedDeltas.length} contributor{selectedDeltas.length === 1 ? '' : 's'} changed their hours</div>
+                        <div style="color:var(--c-text-2);">{top1.author_name}{top2 ? ` and ${top2.author_name}` : ''} had the biggest increase.</div>
+                      </div>
+                    </div>
+                  {/if}
+                </div>
+
+                <div style="margin-top:16px;">
+                  <div style="font-size:13px; font-weight:700; color:#11142b; margin-bottom:10px;">Contributor changes</div>
+                  {#if selectedDeltas.length === 0}
+                    <p class="text-xs text-muted">No contributor hour changes in this refresh.</p>
+                  {:else}
+                    <div style="display:grid; grid-template-columns:1fr auto; font-size:11px; color:var(--c-text-3); padding-bottom:6px;">
+                      <span>Contributor</span>
+                      <span style="display:flex; gap:24px;"><span>Hours (previous → current)</span><span style="min-width:48px; text-align:right;">Change</span></span>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:12px;">
+                      {#each selectedDeltas as d}
+                        {@const av2 = avatarBg(d.author_name)}
+                        {@const w = Math.max(10, (Math.abs(d.hours_delta) / selMaxDelta) * 100)}
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                          <span style="display:inline-flex; align-items:center; gap:8px; min-width:0;">
+                            <span style="width:28px; height:28px; border-radius:50%; background:{av2[0]}; color:{av2[1]}; font-size:10px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;">{initials(d.author_name)}</span>
+                            <span style="font-size:12px; font-weight:500; color:#11142b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{d.author_name}</span>
+                          </span>
+                          <span style="display:flex; align-items:center; gap:12px;">
+                            <span style="min-width:150px;">
+                              <span style="font-size:12px; color:#11142b; font-weight:500;">{d.prev_hours_logged.toFixed(1)} → {d.new_hours_logged.toFixed(1)}</span>
+                              <span style="display:block; height:6px; background:#e9ebf3; border-radius:3px; margin-top:4px; overflow:hidden;">
+                                <span style="display:block; height:100%; width:{w}%; background:#2f6bff; border-radius:3px;"></span>
+                              </span>
+                            </span>
+                            <span style="font-size:12px; font-weight:700; color:var(--c-success); min-width:48px; text-align:right;">+{d.hours_delta.toFixed(1)}h</span>
+                          </span>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                  <button onclick={() => openRefreshBreakdown(selectedHistory.id)} style="margin-top:16px; width:100%; background:#fff; border:1px solid var(--c-border-2); border-radius:8px; padding:9px 12px; font-size:12px; font-weight:500; color:var(--c-text); display:flex; align-items:center; justify-content:center; gap:6px;">
+                    View detailed worklogs
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  </button>
+                </div>
+
+                <div style="border-top:1px solid var(--c-border); margin-top:16px; padding-top:14px;">
+                  <div style="font-size:13px; font-weight:700; color:#11142b; margin-bottom:10px;">What's included</div>
+                  <div style="font-size:11px; color:var(--c-text-2); display:flex; align-items:center; gap:6px; margin-bottom:6px;"><span style="color:#2563eb;">⛛</span> JQL filter</div>
+                  <div style="position:relative; background:var(--c-bg); border:1px solid var(--c-border); border-radius:8px; padding:8px 30px 8px 10px; font-family:ui-monospace, monospace; font-size:11px; color:var(--c-text-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title={plan?.jira_jql || '—'}>
+                    {plan?.jira_jql || '—'}
+                    <button onclick={() => copyJql(plan?.jira_jql || '')} title="Copy JQL" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--c-text-3); cursor:pointer; font-size:13px;">⧉</button>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; font-size:11px;">
+                    <div>
+                      <div style="display:flex; align-items:center; gap:5px; color:var(--c-text-3);"><span>📅</span> Date range</div>
+                      <div style="font-weight:600; color:var(--c-text); margin-top:2px;">{formatSprintRange(snapshot.start_date, snapshot.end_date)}</div>
+                    </div>
+                    <div>
+                      <div style="display:flex; align-items:center; gap:5px; color:var(--c-text-3);"><span>🕐</span> Snapshot taken</div>
+                      <div style="font-weight:600; color:var(--c-text); margin-top:2px;">{formatHistoryDateTime(selectedHistory.refreshed_at)}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {:else}
+              <div style="background:#fff; border:1px solid var(--c-border); border-radius:12px; padding:32px 20px; text-align:center; color:var(--c-text-3); font-size:12px;">
+                Select a refresh to see details.
+              </div>
+            {/if}
+          </div>
+        </div>
+
+      {/if}
     </div>
   {/if}
 
@@ -1328,6 +1709,17 @@
 </div>
 
 <style>
+  .history-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 16px;
+    align-items: start;
+  }
+  @media (max-width: 1024px) {
+    .history-layout {
+      grid-template-columns: 1fr;
+    }
+  }
   .btn-outline-danger {
     background: transparent;
     border: 1px solid var(--c-danger);
@@ -1337,13 +1729,24 @@
     background: var(--c-danger-lt);
   }
 
-  .grid-layout {
-    grid-template-columns: 2fr 1fr;
+  .tab-btn {
+    background: transparent;
+    border: none;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--c-text-3);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 150ms ease;
+    outline: none;
   }
-
-  @media (max-width: 768px) {
-    .grid-layout {
-      grid-template-columns: 1fr;
-    }
+  .tab-btn:hover {
+    color: var(--c-text-2);
+  }
+  .tab-btn.active {
+    color: var(--c-primary);
+    border-bottom-color: var(--c-primary);
+    font-weight: 600;
   }
 </style>
