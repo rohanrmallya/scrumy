@@ -184,6 +184,9 @@
       snapshot = s;
       if (s) {
         showAllWorklogs = s.all_worklogs;
+        editSnapshotName = s.name;
+        editSnapshotStart = s.start_date;
+        editSnapshotEnd = s.end_date;
       }
     } catch (e: any) {
       error = e.message;
@@ -215,7 +218,7 @@
   let activityFilter = $state<'all' | 'planned' | 'unplanned'>('all');
   let togglingIssueKey = $state<string>('');
 
-  let activeTab = $state<'overview' | 'issues' | 'history'>('overview');
+  let activeTab = $state<'overview' | 'issues' | 'history' | 'settings'>('overview');
   let issueSearchQuery = $state('');
   let issueClassificationFilter = $state<'all' | 'planned' | 'unplanned'>('all');
 
@@ -511,21 +514,21 @@
     });
   });
 
-  // Edit Snapshot Modal state
-  let showEditModal = $state(false);
+  // Snapshot settings form state (Settings tab)
   let editSnapshotName = $state('');
   let editSnapshotStart = $state('');
   let editSnapshotEnd = $state('');
   let updatingSnapshot = $state(false);
   let editSnapshotError = $state('');
+  let snapshotSaved = $state(false);
 
-  function openEditSnapshot() {
+  function resetSnapshotForm() {
     if (!snapshot) return;
     editSnapshotName = snapshot.name;
     editSnapshotStart = snapshot.start_date;
     editSnapshotEnd = snapshot.end_date;
     editSnapshotError = '';
-    showEditModal = true;
+    snapshotSaved = false;
   }
 
   async function saveEditedSnapshot() {
@@ -536,6 +539,7 @@
     }
     updatingSnapshot = true;
     editSnapshotError = '';
+    snapshotSaved = false;
     try {
       const updated = await api.jira.updateSnapshot(teamID, snapshot.id, {
         name: editSnapshotName.trim(),
@@ -543,7 +547,7 @@
         end_date: editSnapshotEnd,
       });
       snapshot = updated;
-      showEditModal = false;
+      snapshotSaved = true;
     } catch (e: any) {
       editSnapshotError = e.message;
     } finally {
@@ -756,10 +760,6 @@
           Export to CSV
         </button>
         {#if team?.is_admin}
-          <button onclick={openEditSnapshot} style="display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--c-border-2); border-radius:8px; padding:8px 14px; font-size:13px; font-weight:500; color:var(--c-text);">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-            Edit Settings
-          </button>
           <button onclick={refreshSnapshot} disabled={refreshing} style="display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--c-border-2); border-radius:8px; padding:8px 14px; font-size:13px; font-weight:500; color:var(--c-text);">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
             {refreshing ? 'Refreshing...' : 'Refresh'}
@@ -791,6 +791,12 @@
         onclick={() => { activeTab = 'history'; if (!selectedHistoryId && snapshot?.refresh_history?.[0]) selectedHistoryId = snapshot.refresh_history[0].id; }}
       >
         <span style="display:inline-flex; align-items:center; gap:6px;"><span style="font-size:13px;">🔄</span> Snapshot History ({snapshot.refresh_history?.length || 0})</span>
+      </button>
+      <button
+        class="tab-btn {activeTab === 'settings' ? 'active' : ''}"
+        onclick={() => { activeTab = 'settings'; resetSnapshotForm(); }}
+      >
+        <span style="display:inline-flex; align-items:center; gap:6px;"><span style="font-size:13px;">⚙️</span> Settings</span>
       </button>
     </div>
 
@@ -1525,46 +1531,73 @@
           </div>
         </div>
 
-      {/if}
-    </div>
-  {/if}
-
-  {#if showEditModal}
-    <div style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:1000; backdrop-filter:blur(4px); transition: opacity 0.2s ease;">
-      <div style="background:var(--c-surface); border:1px solid var(--c-border); border-radius:12px; width:480px; max-width:90%; padding:24px; box-shadow:var(--shadow-lg);">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--c-border); padding-bottom:12px;">
-          <h3 class="font-semibold text-base" style="color:var(--c-primary); margin:0;">Edit Snapshot Settings</h3>
-          <button class="btn-icon" onclick={() => showEditModal = false} style="font-size:14px; width:28px; height:28px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; background:transparent;">✕</button>
+      {:else if activeTab === 'settings'}
+      <!-- Snapshot Settings -->
+      <div style="max-width:720px; margin:0 auto; display:flex; flex-direction:column; gap:20px;">
+        <!-- General -->
+        <div class="card">
+          <div class="card-header">
+            <div class="flex items-center gap-2">
+              <span>📸</span>
+              <h2 class="font-semibold" style="font-size:15px;">General</h2>
+            </div>
+          </div>
+          <div class="card-body" style="display:flex; flex-direction:column; gap:12px; padding-top:16px;">
+            <div class="form-group">
+              <label class="label" style="font-size:11px;" for="snapshot-name">Snapshot name</label>
+              <input
+                id="snapshot-name"
+                class="input"
+                bind:value={editSnapshotName}
+                placeholder="e.g. Sprint 25"
+                disabled={!team?.is_admin || updatingSnapshot}
+              />
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div class="form-group">
+                <label class="label" style="font-size:11px;" for="snapshot-start">Start date</label>
+                <input id="snapshot-start" type="date" class="input" bind:value={editSnapshotStart} disabled={!team?.is_admin || updatingSnapshot} />
+              </div>
+              <div class="form-group">
+                <label class="label" style="font-size:11px;" for="snapshot-end">End date</label>
+                <input id="snapshot-end" type="date" class="input" bind:value={editSnapshotEnd} disabled={!team?.is_admin || updatingSnapshot} />
+              </div>
+            </div>
+            <p class="text-xs text-muted" style="font-size:10px;">Changing the date range re-fetches the snapshot data from Jira.</p>
+            {#if team?.is_admin}
+              <div>
+                <button class="btn btn-primary btn-sm" onclick={saveEditedSnapshot} disabled={updatingSnapshot}>
+                  {updatingSnapshot ? 'Saving…' : 'Save changes'}
+                </button>
+              </div>
+            {:else}
+              <p class="text-xs text-muted" style="font-size:10px;">Only team admins can edit this snapshot.</p>
+            {/if}
+            {#if editSnapshotError}
+              <p class="text-xs" style="color:var(--c-danger);">⚠️ {editSnapshotError}</p>
+            {/if}
+            {#if snapshotSaved}
+              <p class="text-xs" style="color:var(--c-success);">✓ Snapshot settings saved</p>
+            {/if}
+          </div>
         </div>
-        
-        <div style="display:flex; flex-direction:column; gap:16px; margin-bottom:20px;">
-          <div class="form-group">
-            <label class="label" style="font-size:11px; margin-bottom:6px;">Snapshot Name</label>
-            <input class="input" style="padding:10px; font-size:13px;" bind:value={editSnapshotName} placeholder="e.g. Sprint 24 Retro" />
-          </div>
-          <div class="form-group">
-            <label class="label" style="font-size:11px; margin-bottom:6px;">Start Date</label>
-            <input type="date" class="input" style="padding:8px; font-size:13px;" bind:value={editSnapshotStart} />
-          </div>
-          <div class="form-group">
-            <label class="label" style="font-size:11px; margin-bottom:6px;">End Date</label>
-            <input type="date" class="input" style="padding:8px; font-size:13px;" bind:value={editSnapshotEnd} />
+        {#if team?.is_admin}
+        <!-- Danger zone -->
+        <div class="card" style="border-color:#fecaca;">
+          <div class="card-body" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+            <div>
+              <p class="font-semibold" style="font-size:14px; color:var(--c-danger);">Delete this snapshot</p>
+              <p class="text-xs text-muted" style="margin-top:2px;">Permanently deletes the snapshot and its refresh history.</p>
+            </div>
+            <button class="btn btn-outline-danger btn-sm" onclick={deleteSnapshot} disabled={deleting}>
+              {deleting ? 'Deleting…' : 'Delete Snapshot'}
+            </button>
           </div>
         </div>
-
-        {#if editSnapshotError}
-          <div class="badge badge-danger" style="margin-bottom:16px; padding:10px; border-radius:6px; font-size:12px; text-transform:none; letter-spacing:0; text-align:center; display:block; font-weight:400;">
-            ⚠️ {editSnapshotError}
-          </div>
         {/if}
-
-        <div style="display:flex; justify-content:flex-end; gap:12px; border-top:1px solid var(--c-border); padding-top:16px;">
-          <button class="btn btn-secondary" onclick={() => showEditModal = false} disabled={updatingSnapshot}>Cancel</button>
-          <button class="btn btn-primary" onclick={saveEditedSnapshot} disabled={updatingSnapshot}>
-            {updatingSnapshot ? 'Saving...' : 'Save'}
-          </button>
-        </div>
       </div>
+
+      {/if}
     </div>
   {/if}
 
