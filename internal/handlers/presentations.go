@@ -17,26 +17,26 @@ type PresentationsHandler struct {
 	Auth *AuthHandler
 }
 
-func (h *PresentationsHandler) checkAdmin(r *http.Request, planID string) bool {
+func (h *PresentationsHandler) checkAdmin(r *http.Request, teamID string) bool {
 	user := h.Auth.GetUserFromContext(r.Context())
 	if user == nil {
 		return false
 	}
-	return h.Auth.IsPlanAdmin(user.ID, planID)
+	return h.Auth.IsTeamAdmin(user.ID, teamID)
 }
 
-func (h *PresentationsHandler) getPlanID(presID string) string {
-	var planID string
-	h.DB.QueryRow("SELECT plan_id FROM presentations WHERE id = ?", presID).Scan(&planID)
-	return planID
+func (h *PresentationsHandler) getTeamID(presID string) string {
+	var teamID string
+	h.DB.QueryRow("SELECT team_id FROM presentations WHERE id = ?", presID).Scan(&teamID)
+	return teamID
 }
 
 func (h *PresentationsHandler) List(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
+	teamID := teamIDParam(r)
 	rows, err := h.DB.Query(`
-		SELECT id, plan_id, type, template_id, title, status, sprint_name, created_at, updated_at
-		FROM presentations WHERE plan_id=? ORDER BY created_at DESC
-	`, planID)
+		SELECT id, team_id, type, template_id, title, status, sprint_name, created_at, updated_at
+		FROM presentations WHERE team_id=? ORDER BY created_at DESC
+	`, teamID)
 	if err != nil {
 		respondErr(w, 500, err.Error())
 		return
@@ -58,8 +58,8 @@ func (h *PresentationsHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PresentationsHandler) Create(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
-	if !h.checkAdmin(r, planID) {
+	teamID := teamIDParam(r)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -82,8 +82,8 @@ func (h *PresentationsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	id := uuid.NewString()
 	_, err := h.DB.Exec(`
-		INSERT INTO presentations (id, plan_id, type, template_id, title, sprint_name) VALUES (?, ?, ?, ?, ?, ?)
-	`, id, planID, body.Type, body.TemplateID, body.Title, body.SprintName)
+		INSERT INTO presentations (id, team_id, type, template_id, title, sprint_name) VALUES (?, ?, ?, ?, ?, ?)
+	`, id, teamID, body.Type, body.TemplateID, body.Title, body.SprintName)
 	if err != nil {
 		respondErr(w, 500, err.Error())
 		return
@@ -100,8 +100,8 @@ func (h *PresentationsHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 func (h *PresentationsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "presID")
-	planID := h.getPlanID(id)
-	if !h.checkAdmin(r, planID) {
+	teamID := h.getTeamID(id)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -135,8 +135,8 @@ func (h *PresentationsHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 func (h *PresentationsHandler) Publish(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "presID")
-	planID := h.getPlanID(id)
-	if !h.checkAdmin(r, planID) {
+	teamID := h.getTeamID(id)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -147,8 +147,8 @@ func (h *PresentationsHandler) Publish(w http.ResponseWriter, r *http.Request) {
 
 func (h *PresentationsHandler) Unpublish(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "presID")
-	planID := h.getPlanID(id)
-	if !h.checkAdmin(r, planID) {
+	teamID := h.getTeamID(id)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -159,8 +159,8 @@ func (h *PresentationsHandler) Unpublish(w http.ResponseWriter, r *http.Request)
 
 func (h *PresentationsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "presID")
-	planID := h.getPlanID(id)
-	if !h.checkAdmin(r, planID) {
+	teamID := h.getTeamID(id)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -205,7 +205,7 @@ func (h *PresentationsHandler) AddRetroFeedback(w http.ResponseWriter, r *http.R
 }
 
 func (h *PresentationsHandler) getByID(w http.ResponseWriter, r *http.Request, id string) {
-	row := h.DB.QueryRow(`SELECT id, plan_id, type, template_id, title, status, sprint_name, created_at, updated_at FROM presentations WHERE id=?`, id)
+	row := h.DB.QueryRow(`SELECT id, team_id, type, template_id, title, status, sprint_name, created_at, updated_at FROM presentations WHERE id=?`, id)
 	p, err := scanPres(row)
 	if err == sql.ErrNoRows {
 		respondErr(w, 404, "not found")
@@ -233,7 +233,7 @@ type presScanner interface {
 func scanPres(row presScanner) (models.Presentation, error) {
 	var p models.Presentation
 	var createdAt, updatedAt string
-	err := row.Scan(&p.ID, &p.PlanID, &p.Type, &p.TemplateID, &p.Title, &p.Status, &p.SprintName, &createdAt, &updatedAt)
+	err := row.Scan(&p.ID, &p.TeamID, &p.Type, &p.TemplateID, &p.Title, &p.Status, &p.SprintName, &createdAt, &updatedAt)
 	if err != nil {
 		return p, err
 	}

@@ -4,7 +4,7 @@
   import { goto } from '$app/navigation';
   import { api, type Presentation, type IntroContent, type RetroContent, type PreviousData, type Epic, type Learning, type Change, type Contributor, type JiraSnapshot } from '$lib/api';
 
-  const planID = $derived($page.params.id);
+  const teamID = $derived($page.params.id);
   const presID = $derived($page.params.presid);
 
   let pres = $state<Presentation | null>(null);
@@ -36,10 +36,10 @@
 
   onMount(async () => {
     try {
-      // Load both presentation details and plan snapshots
+      // Load both presentation details and team snapshots
       const [pRes, sRes] = await Promise.all([
-        api.presentations.get(planID, presID),
-        api.jira.listSnapshots(planID)
+        api.presentations.get(teamID, presID),
+        api.jira.listSnapshots(teamID)
       ]);
       
       pres = pRes;
@@ -79,7 +79,7 @@
   async function importSnapshot() {
     if (!selectedSnapshotID) return;
     try {
-      const snap = await api.jira.getSnapshot(planID, selectedSnapshotID);
+      const snap = await api.jira.getSnapshot(teamID, selectedSnapshotID);
       prevData = {
         total_sp_delivered: snap.data.totals.total_story_points,
         total_hours_logged: snap.data.totals.total_hours_logged,
@@ -112,7 +112,7 @@
       const content = pres?.type === 'intro'
         ? { learnings: learnings.filter(l => l.content.trim()), changes: changes.filter(ch => ch.content.trim()), previous_data: prevData, epics, contributors: contributors.filter(c => c.name.trim()), closing_text: closingText } as IntroContent
         : { previous_data: prevData, feedback: retroFeedback.filter(Boolean), contributors: contributors.filter(c => c.name.trim()), closing_text: closingText } as RetroContent;
-      pres = await api.presentations.update(planID, presID, { 
+      pres = await api.presentations.update(teamID, presID, { 
         title, 
         template_id: templateID,
         sprint_name: sprintName, 
@@ -125,12 +125,12 @@
   async function publishPres() {
     publishing = true;
     await save();
-    pres = await api.presentations.publish(planID, presID);
+    pres = await api.presentations.publish(teamID, presID);
     publishing = false;
   }
 
   async function unpublishPres() {
-    pres = await api.presentations.unpublish(planID, presID);
+    pres = await api.presentations.unpublish(teamID, presID);
   }
 
   function addLearning() { learnings = [...learnings, { title: '', content: '', tags: [] }]; }
@@ -151,7 +151,7 @@
 
 <div style="background:var(--c-surface);border-bottom:1px solid var(--c-border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:56px;z-index:99;">
   <div class="flex items-center gap-3">
-    <a href="/plans/{planID}" class="btn-icon" style="font-size:18px;">←</a>
+    <a href="/teams/{teamID}" class="btn-icon" style="font-size:18px;">←</a>
     <div>
       <h1 class="font-semibold" style="font-size:16px;">{title || 'Edit Presentation'}</h1>
       {#if pres}<span class="badge {pres.status === 'published' ? 'badge-success' : 'badge-warning'}">{pres.status}</span>{/if}
@@ -159,7 +159,7 @@
   </div>
   <div class="flex gap-2">
     {#if pres?.status === 'published'}
-      <a href="/plans/{planID}/presentations/{presID}/view" class="btn btn-secondary">▶ Preview</a>
+      <a href="/teams/{teamID}/presentations/{presID}/view" class="btn btn-secondary">▶ Preview</a>
       <button class="btn btn-ghost btn-sm" onclick={unpublishPres}>Unpublish</button>
     {:else}
       <button class="btn btn-secondary" onclick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Draft'}</button>

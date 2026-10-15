@@ -3,7 +3,7 @@
   import { goto } from '$app/navigation';
   import { api, type IntroContent, type RetroContent, type PreviousData, type Epic, type Contributor } from '$lib/api';
 
-  const planID = $derived($page.params.id);
+  const teamID = $derived($page.params.id);
   const type = $derived(($page.url.searchParams.get('type') ?? 'intro') as 'intro' | 'retro');
 
   let title = $state('');
@@ -48,7 +48,7 @@
     if (!title.trim()) { error = 'Title is required'; return; }
     saving = true;
     try {
-      const pres = await api.presentations.create(planID, {
+      const pres = await api.presentations.create(teamID, {
         type, 
         template_id: templateID,
         title: title.trim(), 
@@ -70,13 +70,13 @@
             closing_text: ""
           } as RetroContent;
       
-      await api.presentations.update(planID, pres.id, { 
+      await api.presentations.update(teamID, pres.id, { 
         title: title.trim(), 
         template_id: templateID,
         sprint_name: sprintName.trim(), 
         content 
       });
-      goto(`/plans/${planID}/presentations/${pres.id}/edit`);
+      goto(`/teams/${teamID}/presentations/${pres.id}/edit`);
     } catch (e: any) {
       error = e.message;
     } finally { saving = false; }
@@ -90,13 +90,13 @@
 <!-- Top bar -->
 <div style="background:var(--c-surface);border-bottom:1px solid var(--c-border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:56px;z-index:99;">
   <div class="flex items-center gap-3">
-    <a href="/plans/{planID}" class="btn-icon" style="font-size:18px;" title="Back">←</a>
+    <a href="/teams/{teamID}" class="btn-icon" style="font-size:18px;" title="Back">←</a>
     <div>
       <h1 class="font-semibold" style="font-size:16px;">{type === 'intro' ? 'Scrum Intro Form' : 'Sprint Retro Form'}</h1>
     </div>
   </div>
   <div class="flex gap-2">
-    <a href="/plans/{planID}" class="btn btn-secondary">Cancel</a>
+    <a href="/teams/{teamID}" class="btn btn-secondary">Cancel</a>
     <button class="btn btn-primary" onclick={saveDraft} disabled={saving}>
       {saving ? 'Saving…' : 'Save Presentation Data'}
     </button>

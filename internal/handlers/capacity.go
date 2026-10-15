@@ -18,28 +18,28 @@ type CapacityHandler struct {
 	Auth *AuthHandler
 }
 
-func (h *CapacityHandler) checkAdmin(r *http.Request, planID string) bool {
+func (h *CapacityHandler) checkAdmin(r *http.Request, teamID string) bool {
 	user := h.Auth.GetUserFromContext(r.Context())
 	if user == nil {
 		return false
 	}
-	return h.Auth.IsPlanAdmin(user.ID, planID)
+	return h.Auth.IsTeamAdmin(user.ID, teamID)
 }
 
-func (h *CapacityHandler) getPlanID(cpID string) string {
-	var planID string
-	h.DB.QueryRow("SELECT plan_id FROM capacity_plans WHERE id = ?", cpID).Scan(&planID)
-	return planID
+func (h *CapacityHandler) getTeamID(cpID string) string {
+	var teamID string
+	h.DB.QueryRow("SELECT team_id FROM capacity_plans WHERE id = ?", cpID).Scan(&teamID)
+	return teamID
 }
 
 // ─── Capacity Plans ───────────────────────────────────────────────────────────
 
 func (h *CapacityHandler) List(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
+	teamID := teamIDParam(r)
 	rows, err := h.DB.Query(`
-		SELECT id, plan_id, name, status, hours_per_sp, productive_hours, loading_factor, created_at, updated_at
-		FROM capacity_plans WHERE plan_id = ? ORDER BY created_at DESC
-	`, planID)
+		SELECT id, team_id, name, status, hours_per_sp, productive_hours, loading_factor, created_at, updated_at
+		FROM capacity_plans WHERE team_id = ? ORDER BY created_at DESC
+	`, teamID)
 	if err != nil {
 		respondErr(w, 500, err.Error())
 		return
@@ -61,8 +61,8 @@ func (h *CapacityHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CapacityHandler) Create(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
-	if !h.checkAdmin(r, planID) {
+	teamID := teamIDParam(r)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -92,9 +92,9 @@ func (h *CapacityHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	id := uuid.NewString()
 	_, err := h.DB.Exec(`
-		INSERT INTO capacity_plans (id, plan_id, name, hours_per_sp, productive_hours, loading_factor)
+		INSERT INTO capacity_plans (id, team_id, name, hours_per_sp, productive_hours, loading_factor)
 		VALUES (?, ?, ?, ?, ?, ?)
-	`, id, planID, body.Name, body.HoursPerSP, body.ProductiveHours, body.LoadingFactor)
+	`, id, teamID, body.Name, body.HoursPerSP, body.ProductiveHours, body.LoadingFactor)
 	if err != nil {
 		respondErr(w, 500, err.Error())
 		return
@@ -110,7 +110,7 @@ func (h *CapacityHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *CapacityHandler) getByID(w http.ResponseWriter, r *http.Request, id string) {
 	cp, err := h.loadFull(id)
 	if err == sql.ErrNoRows {
-		respondErr(w, 404, "capacity plan not found")
+		respondErr(w, 404, "capacity team not found")
 		return
 	}
 	if err != nil {
@@ -122,8 +122,8 @@ func (h *CapacityHandler) getByID(w http.ResponseWriter, r *http.Request, id str
 
 func (h *CapacityHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "cpID")
-	planID := h.getPlanID(id)
-	if !h.checkAdmin(r, planID) {
+	teamID := h.getTeamID(id)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -152,8 +152,8 @@ func (h *CapacityHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "cpID")
-	planID := h.getPlanID(id)
-	if !h.checkAdmin(r, planID) {
+	teamID := h.getTeamID(id)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -190,8 +190,8 @@ func (h *CapacityHandler) Summary(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	cpID := chi.URLParam(r, "cpID")
-	planID := h.getPlanID(cpID)
-	if !h.checkAdmin(r, planID) {
+	teamID := h.getTeamID(cpID)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -222,8 +222,8 @@ func (h *CapacityHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 	cpID := chi.URLParam(r, "cpID")
-	planID := h.getPlanID(cpID)
-	if !h.checkAdmin(r, planID) {
+	teamID := h.getTeamID(cpID)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -249,8 +249,8 @@ func (h *CapacityHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) DeleteMember(w http.ResponseWriter, r *http.Request) {
 	cpID := chi.URLParam(r, "cpID")
-	planID := h.getPlanID(cpID)
-	if !h.checkAdmin(r, planID) {
+	teamID := h.getTeamID(cpID)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -264,8 +264,8 @@ func (h *CapacityHandler) DeleteMember(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) AddSprint(w http.ResponseWriter, r *http.Request) {
 	cpID := chi.URLParam(r, "cpID")
-	planID := h.getPlanID(cpID)
-	if !h.checkAdmin(r, planID) {
+	teamID := h.getTeamID(cpID)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -299,8 +299,8 @@ func (h *CapacityHandler) AddSprint(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) UpdateSprint(w http.ResponseWriter, r *http.Request) {
 	cpID := chi.URLParam(r, "cpID")
-	planID := h.getPlanID(cpID)
-	if !h.checkAdmin(r, planID) {
+	teamID := h.getTeamID(cpID)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -322,8 +322,8 @@ func (h *CapacityHandler) UpdateSprint(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) DeleteSprint(w http.ResponseWriter, r *http.Request) {
 	cpID := chi.URLParam(r, "cpID")
-	planID := h.getPlanID(cpID)
-	if !h.checkAdmin(r, planID) {
+	teamID := h.getTeamID(cpID)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -335,8 +335,8 @@ func (h *CapacityHandler) DeleteSprint(w http.ResponseWriter, r *http.Request) {
 
 func (h *CapacityHandler) UpsertLeave(w http.ResponseWriter, r *http.Request) {
 	cpID := chi.URLParam(r, "cpID")
-	planID := h.getPlanID(cpID)
-	if !h.checkAdmin(r, planID) {
+	teamID := h.getTeamID(cpID)
+	if !h.checkAdmin(r, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -365,7 +365,7 @@ func (h *CapacityHandler) UpsertLeave(w http.ResponseWriter, r *http.Request) {
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
 func (h *CapacityHandler) loadFull(id string) (models.CapacityPlan, error) {
-	row := h.DB.QueryRow(`SELECT id, plan_id, name, status, hours_per_sp, productive_hours, loading_factor, created_at, updated_at FROM capacity_plans WHERE id=?`, id)
+	row := h.DB.QueryRow(`SELECT id, team_id, name, status, hours_per_sp, productive_hours, loading_factor, created_at, updated_at FROM capacity_plans WHERE id=?`, id)
 	cp, err := scanCP(row)
 	if err != nil {
 		return cp, err
@@ -417,7 +417,7 @@ type scanner interface {
 func scanCP(row scanner) (models.CapacityPlan, error) {
 	var cp models.CapacityPlan
 	var createdAt, updatedAt string
-	err := row.Scan(&cp.ID, &cp.PlanID, &cp.Name, &cp.Status, &cp.HoursPerSP, &cp.ProductiveHours, &cp.LoadingFactor, &createdAt, &updatedAt)
+	err := row.Scan(&cp.ID, &cp.TeamID, &cp.Name, &cp.Status, &cp.HoursPerSP, &cp.ProductiveHours, &cp.LoadingFactor, &createdAt, &updatedAt)
 	if err != nil {
 		return cp, err
 	}

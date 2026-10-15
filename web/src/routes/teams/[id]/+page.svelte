@@ -2,11 +2,11 @@
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { api, type Plan, type CapacityPlan, type Presentation, type JiraSnapshot, type JiraSettings, type Sprint } from '$lib/api';
+  import { api, type Team, type CapacityPlan, type Presentation, type JiraSnapshot, type JiraSettings, type Sprint } from '$lib/api';
 
-  const planID = $derived($page.params.id);
+  const teamID = $derived($page.params.id);
 
-  let plan = $state<Plan | null>(null);
+  let team = $state<Team | null>(null);
   let capacityPlans = $state<CapacityPlan[]>([]);
   let presentations = $state<Presentation[]>([]);
   let snapshots = $state<JiraSnapshot[]>([]);
@@ -28,7 +28,7 @@
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
   let adminFilter = $state('');
 
-  const currentAdmins = $derived(plan?.admins ?? []);
+  const currentAdmins = $derived(team?.admins ?? []);
   const adminSet = $derived(new Set(currentAdmins));
   const filteredAdmins = $derived(
     adminFilter.trim()
@@ -61,12 +61,12 @@
   onMount(async () => {
     try {
       const [p, c, pr, sn] = await Promise.all([
-        api.plans.get(planID),
-        api.capacity.list(planID),
-        api.presentations.list(planID),
-        api.jira.listSnapshots(planID),
+        api.teams.get(teamID),
+        api.capacity.list(teamID),
+        api.presentations.list(teamID),
+        api.jira.listSnapshots(teamID),
       ]);
-      plan = p;
+      team = p;
       capacityPlans = c;
       presentations = pr;
       snapshots = sn;
@@ -102,7 +102,7 @@
     testingConnection = true;
     testResult = null;
     try {
-      await api.jira.testConnection(planID, {
+      await api.jira.testConnection(teamID, {
         jira_url: jiraURL,
         jira_user: jiraUser,
         jira_token: jiraToken || undefined,
@@ -119,7 +119,7 @@
   async function saveJiraSettings() {
     savingSettings = true;
     try {
-      await api.jira.saveSettings(planID, {
+      await api.jira.saveSettings(teamID, {
         jira_url: jiraURL.trim(),
         jira_user: jiraUser.trim(),
         jira_token: jiraToken ? jiraToken.trim() : undefined,
@@ -127,9 +127,9 @@
         jira_sp_field: jiraSPField.trim(),
         jira_insecure: jiraInsecure,
       });
-      plan = await api.plans.get(planID);
-      jiraTokenSet = !!plan.jira_token_set;
-      jiraInsecure = !!plan.jira_insecure;
+      team = await api.teams.get(teamID);
+      jiraTokenSet = !!team.jira_token_set;
+      jiraInsecure = !!team.jira_insecure;
       jiraToken = ''; // Reset input after saving
       alert('Jira settings saved successfully!');
     } catch (e: any) {
@@ -146,7 +146,7 @@
     }
     creatingSnapshot = true;
     try {
-      const snap = await api.jira.createSnapshot(planID, {
+      const snap = await api.jira.createSnapshot(teamID, {
         name: newSnapshotName.trim(),
         start_date: newSnapshotStart,
         end_date: newSnapshotEnd,
@@ -159,7 +159,7 @@
       newSnapshotEnd = '';
       
       // Navigate to the dedicated snapshot page!
-      goto(`/plans/${planID}/snapshots/${snap.id}`);
+      goto(`/teams/${teamID}/snapshots/${snap.id}`);
     } catch (e: any) {
       alert(`Failed to create snapshot: ${e.message}`);
     } finally {
@@ -170,7 +170,7 @@
   async function deleteSnapshot(id: string) {
     if (!confirm('Are you sure you want to delete this snapshot?')) return;
     try {
-      await api.jira.deleteSnapshot(planID, id);
+      await api.jira.deleteSnapshot(teamID, id);
       snapshots = snapshots.filter(s => s.id !== id);
     } catch (e: any) {
       alert(`Failed to delete: ${e.message}`);
@@ -202,7 +202,7 @@
     updatingSnapshot = true;
     editSnapshotError = '';
     try {
-      const updated = await api.jira.updateSnapshot(planID, activeEditSnapshot.id, {
+      const updated = await api.jira.updateSnapshot(teamID, activeEditSnapshot.id, {
         name: editSnapshotName.trim(),
         start_date: editSnapshotStart,
         end_date: editSnapshotEnd,
@@ -224,17 +224,17 @@
   }
 
   async function deleteCapacity(cpID: string) {
-    if (!confirm('Delete this capacity plan?')) return;
-    await api.capacity.delete(planID, cpID);
-    capacityPlans = await api.capacity.list(planID);
-    plan = await api.plans.get(planID);
+    if (!confirm('Delete this capacity team?')) return;
+    await api.capacity.delete(teamID, cpID);
+    capacityPlans = await api.capacity.list(teamID);
+    team = await api.teams.get(teamID);
   }
 
   async function deletePres(presID: string) {
     if (!confirm('Delete this presentation?')) return;
-    await api.presentations.delete(planID, presID);
-    presentations = await api.presentations.list(planID);
-    plan = await api.plans.get(planID);
+    await api.presentations.delete(teamID, presID);
+    presentations = await api.presentations.list(teamID);
+    team = await api.teams.get(teamID);
   }
 
   async function addAdminByUsername(username: string) {
@@ -245,8 +245,8 @@
     adminError = '';
     adminNotice = '';
     try {
-      await api.plans.addAdmin(planID, name);
-      plan = await api.plans.get(planID);
+      await api.teams.addAdmin(teamID, name);
+      team = await api.teams.get(teamID);
       adminNotice = `"${name}" added as admin`;
       newAdminUsername = '';
       adminSearchQuery = '';
@@ -296,8 +296,8 @@
     adminError = '';
     adminNotice = '';
     try {
-      await api.plans.removeAdmin(planID, username);
-      plan = await api.plans.get(planID);
+      await api.teams.removeAdmin(teamID, username);
+      team = await api.teams.get(teamID);
       adminNotice = `"${username}" removed`;
     } catch (e: any) {
       adminError = e.message;
@@ -306,13 +306,42 @@
     }
   }
 
-  async function deletePlan() {
+  async function deleteTeam() {
     if (!confirm('PERMANENTLY DELETE THIS ENTIRE PLAN AND ALL ITS DATA?')) return;
     try {
-      await api.plans.delete(planID);
+      await api.teams.delete(teamID);
       goto('/');
     } catch (e: any) {
       alert(e.message);
+    }
+  }
+
+  let editingTeamName = $state(false);
+  let teamNameDraft = $state('');
+  let renamingTeam = $state(false);
+  let renameError = $state('');
+
+  function startRenameTeam() {
+    teamNameDraft = team?.name ?? '';
+    renameError = '';
+    editingTeamName = true;
+  }
+
+  async function saveTeamName() {
+    const name = teamNameDraft.trim();
+    if (!name) {
+      renameError = 'Name is required';
+      return;
+    }
+    renamingTeam = true;
+    renameError = '';
+    try {
+      team = await api.teams.update(teamID, name);
+      editingTeamName = false;
+    } catch (e: any) {
+      renameError = e.message;
+    } finally {
+      renamingTeam = false;
     }
   }
 
@@ -330,14 +359,14 @@
 </script>
 
 <svelte:head>
-  <title>{plan?.name ?? 'Plan'} – Scrumy</title>
+  <title>{team?.name ?? 'Team'} – Scrumy</title>
 </svelte:head>
 
 <div class="page-content fade-in">
   {#if loading}
     <div class="flex items-center gap-3" style="padding:40px 0">
       <span class="spinner"></span>
-      <span class="text-muted">Loading plan…</span>
+      <span class="text-muted">Loading team…</span>
     </div>
   {:else if error}
     <div class="badge badge-danger" style="padding:12px 20px; border-radius:8px; font-size:14px; text-transform:none; letter-spacing:0; font-weight:400;">
@@ -345,13 +374,39 @@
     </div>
   {:else}
     <!-- Header -->
-    <div class="flex items-center justify-between" style="margin-bottom:20px;">
-      <div>
-        <h1 class="text-2xl font-bold">{plan?.name}</h1>
-        <p class="text-sm text-muted" style="margin-top:2px;">Plan Workspace</p>
+    <div class="flex items-center justify-between" style="margin-bottom:20px; gap:16px;">
+      <div style="min-width:0; flex:1;">
+        {#if editingTeamName}
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <input
+              class="input"
+              style="max-width:320px; font-size:18px; font-weight:700; padding:6px 10px;"
+              bind:value={teamNameDraft}
+              placeholder="Team name"
+              disabled={renamingTeam}
+              onkeydown={(e) => { if (e.key === 'Enter') saveTeamName(); if (e.key === 'Escape') editingTeamName = false; }}
+              autofocus
+            />
+            <button class="btn btn-primary btn-sm" onclick={saveTeamName} disabled={renamingTeam || !teamNameDraft.trim()}>
+              {renamingTeam ? 'Saving…' : 'Save'}
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick={() => editingTeamName = false} disabled={renamingTeam}>Cancel</button>
+          </div>
+          {#if renameError}
+            <p class="text-xs" style="color:var(--c-danger); margin-top:6px;">⚠️ {renameError}</p>
+          {/if}
+        {:else}
+          <h1 class="text-2xl font-bold" style="display:flex; align-items:center; gap:8px;">
+            {team?.name}
+            {#if team?.is_admin}
+              <button class="btn-icon" onclick={startRenameTeam} title="Rename team" style="font-size:14px;" aria-label="Rename team">✎</button>
+            {/if}
+          </h1>
+        {/if}
+        <p class="text-sm text-muted" style="margin-top:2px;">Team Workspace</p>
       </div>
-      {#if plan?.is_admin}
-        <button class="btn btn-outline-danger btn-sm" onclick={deletePlan}>Delete Plan</button>
+      {#if team?.is_admin}
+        <button class="btn btn-outline-danger btn-sm" onclick={deleteTeam}>Delete Team</button>
       {/if}
     </div>
 
@@ -369,7 +424,7 @@
       >
         Jira Integration
       </button>
-      {#if plan?.is_admin}
+      {#if team?.is_admin}
         <button
           class="tab-btn {activeTab === 'admins' ? 'active' : ''}"
           onclick={() => activeTab = 'admins'}
@@ -388,23 +443,23 @@
               <span style="font-size:18px;">📊</span>
               <h2 class="font-semibold" style="font-size:16px;">Capacity Plans</h2>
             </div>
-            {#if plan?.is_admin}
-              <a href="/plans/{planID}/capacity/new" class="btn btn-primary btn-sm">+ Create New</a>
+            {#if team?.is_admin}
+              <a href="/teams/{teamID}/capacity/new" class="btn btn-primary btn-sm">+ Create New</a>
             {/if}
           </div>
 
           <div>
             {#if capacityPlans.length === 0}
               <div class="empty-state">
-                <p>No capacity plans yet.</p>
-                {#if plan?.is_admin}
-                  <a href="/plans/{planID}/capacity/new" class="btn btn-primary btn-sm" style="margin-top:12px;">Create First Plan</a>
+                <p>No capacity teams yet.</p>
+                {#if team?.is_admin}
+                  <a href="/teams/{teamID}/capacity/new" class="btn btn-primary btn-sm" style="margin-top:12px;">Create First Plan</a>
                 {/if}
               </div>
             {:else}
               {#each capacityPlans.slice(0, 3) as cp (cp.id)}
                 <a
-                  href="/plans/{planID}/capacity/{cp.id}"
+                  href="/teams/{teamID}/capacity/{cp.id}"
                   style="display:block; padding:16px 20px; border-bottom:1px solid var(--c-border); text-decoration:none; transition:background 150ms ease; cursor:pointer;"
                   onmouseover={e => (e.currentTarget as HTMLElement).style.background = 'var(--c-bg)'}
                   onmouseout={e => (e.currentTarget as HTMLElement).style.background = ''}
@@ -415,7 +470,7 @@
                     <span class="font-semibold" style="font-size:14px;">{cp.name}</span>
                     <div class="flex items-center gap-2">
                       <span class="badge {statusBadge(cp.status)}">{cp.status}</span>
-                      {#if plan?.is_admin}
+                      {#if team?.is_admin}
                         <button
                           class="btn-icon"
                           style="color:var(--c-danger); font-size:14px;"
@@ -430,7 +485,7 @@
               {/each}
               <div style="padding:12px; text-align:center;">
                 <a
-                  href="/plans/{planID}/capacity"
+                  href="/teams/{teamID}/capacity"
                   class="btn btn-secondary btn-sm"
                   style="display:flex; justify-content:center; width:100%;"
                 >
@@ -448,10 +503,10 @@
               <span style="font-size:18px;">🎤</span>
               <h2 class="font-semibold" style="font-size:16px;">Presentations</h2>
             </div>
-            {#if plan?.is_admin}
+            {#if team?.is_admin}
               <div class="flex gap-2">
-                <a href="/plans/{planID}/presentations/new?type=intro" class="btn btn-secondary btn-sm">+ Intro</a>
-                <a href="/plans/{planID}/presentations/new?type=retro" class="btn btn-secondary btn-sm">+ Retro</a>
+                <a href="/teams/{teamID}/presentations/new?type=intro" class="btn btn-secondary btn-sm">+ Intro</a>
+                <a href="/teams/{teamID}/presentations/new?type=retro" class="btn btn-secondary btn-sm">+ Retro</a>
               </div>
             {/if}
           </div>
@@ -468,7 +523,7 @@
                     <div class="flex items-center justify-between" style="padding:10px 12px;background:var(--c-bg);border-radius:8px;">
                       <div class="flex items-center gap-3">
                         {#if pres.status === 'published'}
-                          <a href="/plans/{planID}/presentations/{pres.id}/view"
+                          <a href="/teams/{teamID}/presentations/{pres.id}/view"
                              style="width:30px;height:30px;background:var(--c-primary-lt);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--c-primary);" title="Play">▶</a>
                         {:else}
                           <div style="width:30px;height:30px;background:var(--c-surface-2);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--c-text-3);font-size:12px;">✎</div>
@@ -479,8 +534,8 @@
                         </div>
                       </div>
                       <div class="flex gap-1">
-                        {#if plan?.is_admin}
-                          <a href="/plans/{planID}/presentations/{pres.id}/edit" class="btn-icon" title="Edit" style="font-size:14px;">✎</a>
+                        {#if team?.is_admin}
+                          <a href="/teams/{teamID}/presentations/{pres.id}/edit" class="btn-icon" title="Edit" style="font-size:14px;">✎</a>
                           <button class="btn-icon" style="color:var(--c-danger);font-size:14px;" onclick={() => deletePres(pres.id)} title="Delete">✕</button>
                         {/if}
                       </div>
@@ -503,7 +558,7 @@
                     <div class="flex items-center justify-between" style="padding:10px 12px;background:var(--c-bg);border-radius:8px;">
                       <div class="flex items-center gap-3">
                         {#if pres.status === 'published'}
-                          <a href="/plans/{planID}/presentations/{pres.id}/view"
+                          <a href="/teams/{teamID}/presentations/{pres.id}/view"
                              style="width:30px;height:30px;background:var(--c-purple-lt);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--c-purple);" title="Play">▶</a>
                         {:else}
                           <div style="width:30px;height:30px;background:var(--c-surface-2);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--c-text-3);font-size:12px;">✎</div>
@@ -514,8 +569,8 @@
                         </div>
                       </div>
                       <div class="flex gap-1">
-                        {#if plan?.is_admin}
-                          <a href="/plans/{planID}/presentations/{pres.id}/edit" class="btn-icon" title="Edit" style="font-size:14px;">✎</a>
+                        {#if team?.is_admin}
+                          <a href="/teams/{teamID}/presentations/{pres.id}/edit" class="btn-icon" title="Edit" style="font-size:14px;">✎</a>
                           <button class="btn-icon" style="color:var(--c-danger);font-size:14px;" onclick={() => deletePres(pres.id)} title="Delete">✕</button>
                         {/if}
                       </div>
@@ -528,7 +583,7 @@
           {#if presentations.length > 0}
             <div style="padding:12px; text-align:center; border-top:1px solid var(--c-border);">
               <a
-                href="/plans/{planID}/presentations"
+                href="/teams/{teamID}/presentations"
                 class="btn btn-secondary btn-sm"
                 style="display:flex; justify-content:center; width:100%;"
               >
@@ -545,7 +600,7 @@
               <span style="font-size:18px;">📸</span>
               <h2 class="font-semibold" style="font-size:16px;">Jira Snapshots</h2>
             </div>
-            {#if plan?.is_admin && plan?.jira_url}
+            {#if team?.is_admin && team?.jira_url}
               <button class="btn btn-primary btn-xs" onclick={() => showCreateSnapshotForm = !showCreateSnapshotForm}>
                 {showCreateSnapshotForm ? 'Cancel' : '+ Create'}
               </button>
@@ -596,7 +651,7 @@
             {:else}
               {#each snapshots.slice(0, 3) as s (s.id)}
                 <a
-                  href="/plans/{planID}/snapshots/{s.id}"
+                  href="/teams/{teamID}/snapshots/{s.id}"
                   style="display:block; padding:16px 20px; border-bottom:1px solid var(--c-border); text-decoration:none; transition:background 150ms ease; cursor:pointer;"
                   onmouseover={e => (e.currentTarget as HTMLElement).style.background = 'var(--c-bg)'}
                   onmouseout={e => (e.currentTarget as HTMLElement).style.background = ''}
@@ -605,7 +660,7 @@
                 >
                   <div class="flex justify-between items-center" style="margin-bottom:8px;">
                     <span class="font-semibold" style="font-size:14px; color:var(--c-primary);">{s.name}</span>
-                    {#if plan?.is_admin}
+                    {#if team?.is_admin}
                       <div class="flex items-center gap-1" style="display: flex; align-items: center; gap: 4px;">
                         <button
                           class="btn-icon"
@@ -627,7 +682,7 @@
               {/each}
               <div style="padding:12px; text-align:center;">
                 <a
-                  href="/plans/{planID}/snapshots"
+                  href="/teams/{teamID}/snapshots"
                   class="btn btn-secondary btn-sm"
                   style="display:flex; justify-content:center; width:100%;"
                 >
@@ -653,31 +708,31 @@
           <div class="card-body" style="display:flex; flex-direction:column; gap:12px; padding-top:16px;">
             <div class="form-group">
               <label class="label" style="font-size:11px;">Jira URL</label>
-              <input class="input" bind:value={jiraURL} placeholder="https://your-domain.atlassian.net" disabled={!plan?.is_admin} />
+              <input class="input" bind:value={jiraURL} placeholder="https://your-domain.atlassian.net" disabled={!team?.is_admin} />
             </div>
             <div class="form-group">
               <label class="label" style="font-size:11px;">Email / Username</label>
-              <input class="input" bind:value={jiraUser} placeholder="email@company.com" disabled={!plan?.is_admin} />
+              <input class="input" bind:value={jiraUser} placeholder="email@company.com" disabled={!team?.is_admin} />
             </div>
             <div class="form-group">
               <label class="label" style="font-size:11px;">API Token</label>
-              <input type="password" class="input" bind:value={jiraToken} placeholder={jiraTokenSet ? "•••••••• (Configured)" : "Enter API Token"} disabled={!plan?.is_admin} />
+              <input type="password" class="input" bind:value={jiraToken} placeholder={jiraTokenSet ? "•••••••• (Configured)" : "Enter API Token"} disabled={!team?.is_admin} />
             </div>
             <div class="form-group">
               <label class="label" style="font-size:11px;">Base JQL Filter</label>
-              <input class="input" bind:value={jiraJQL} placeholder="project = PROJ AND statusCategory = Done" disabled={!plan?.is_admin} />
+              <input class="input" bind:value={jiraJQL} placeholder="project = PROJ AND statusCategory = Done" disabled={!team?.is_admin} />
             </div>
             <div class="form-group">
               <label class="label" style="font-size:11px;">Story Points Field (Optional)</label>
-              <input class="input" bind:value={jiraSPField} placeholder="e.g. customfield_10016" disabled={!plan?.is_admin} />
+              <input class="input" bind:value={jiraSPField} placeholder="e.g. customfield_10016" disabled={!team?.is_admin} />
               <p class="text-xs text-muted" style="margin-top:2px; font-size:10px;">Left blank to auto-detect "Story Points"</p>
             </div>
             <div class="form-group flex items-center gap-2" style="margin-top: 4px;">
-              <input type="checkbox" id="jiraInsecure" bind:checked={jiraInsecure} disabled={!plan?.is_admin} />
+              <input type="checkbox" id="jiraInsecure" bind:checked={jiraInsecure} disabled={!team?.is_admin} />
               <label for="jiraInsecure" class="label" style="font-size:11px; margin: 0; cursor: pointer;">Skip TLS Verification (Insecure)</label>
             </div>
 
-            {#if plan?.is_admin}
+            {#if team?.is_admin}
               <div class="flex gap-2" style="margin-top:8px;">
                 <button class="btn btn-secondary btn-sm grow" onclick={testJiraConnection} disabled={testingConnection}>
                   {testingConnection ? 'Testing...' : 'Test Connection'}

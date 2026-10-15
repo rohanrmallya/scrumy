@@ -20,15 +20,15 @@ type JiraHandler struct {
 	Auth *AuthHandler
 }
 
-func (h *JiraHandler) getClientForPlan(planID string) (*jira.Client, string, string, error) {
+func (h *JiraHandler) getClientForTeam(teamID string) (*jira.Client, string, string, error) {
 	var urlStr, user, token, jql, spField string
 	var insecure bool
 	err := h.DB.QueryRow(`
 		SELECT jira_url, jira_user, jira_token, jira_jql, jira_sp_field, jira_insecure 
-		FROM plans WHERE id = ?
-	`, planID).Scan(&urlStr, &user, &token, &jql, &spField, &insecure)
+		FROM teams WHERE id = ?
+	`, teamID).Scan(&urlStr, &user, &token, &jql, &spField, &insecure)
 	if err == sql.ErrNoRows {
-		return nil, "", "", fmt.Errorf("plan not found")
+		return nil, "", "", fmt.Errorf("team not found")
 	} else if err != nil {
 		return nil, "", "", err
 	}
@@ -41,9 +41,9 @@ func (h *JiraHandler) getClientForPlan(planID string) (*jira.Client, string, str
 }
 
 func (h *JiraHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
+	teamID := teamIDParam(r)
 	user := h.Auth.GetUserFromContext(r.Context())
-	if user == nil || !h.Auth.IsPlanAdmin(user.ID, planID) {
+	if user == nil || !h.Auth.IsTeamAdmin(user.ID, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -64,16 +64,16 @@ func (h *JiraHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if body.JiraToken == "" {
 		_, err = h.DB.Exec(`
-			UPDATE plans 
+			UPDATE teams 
 			SET jira_url = ?, jira_user = ?, jira_jql = ?, jira_sp_field = ?, jira_insecure = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?
-		`, body.JiraURL, body.JiraUser, body.JiraJQL, body.JiraSPField, body.JiraInsecure, planID)
+		`, body.JiraURL, body.JiraUser, body.JiraJQL, body.JiraSPField, body.JiraInsecure, teamID)
 	} else {
 		_, err = h.DB.Exec(`
-			UPDATE plans 
+			UPDATE teams 
 			SET jira_url = ?, jira_user = ?, jira_token = ?, jira_jql = ?, jira_sp_field = ?, jira_insecure = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?
-		`, body.JiraURL, body.JiraUser, body.JiraToken, body.JiraJQL, body.JiraSPField, body.JiraInsecure, planID)
+		`, body.JiraURL, body.JiraUser, body.JiraToken, body.JiraJQL, body.JiraSPField, body.JiraInsecure, teamID)
 	}
 	if err != nil {
 		respondErr(w, 500, err.Error())
@@ -84,9 +84,9 @@ func (h *JiraHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *JiraHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
+	teamID := teamIDParam(r)
 	user := h.Auth.GetUserFromContext(r.Context())
-	if user == nil || !h.Auth.IsPlanAdmin(user.ID, planID) {
+	if user == nil || !h.Auth.IsTeamAdmin(user.ID, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -101,13 +101,13 @@ func (h *JiraHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
 
 	// If token is omitted, try fetching the existing one from the DB
 	if body.JiraToken == "" {
-		_ = h.DB.QueryRow("SELECT jira_token FROM plans WHERE id = ?", planID).Scan(&body.JiraToken)
+		_ = h.DB.QueryRow("SELECT jira_token FROM teams WHERE id = ?", teamID).Scan(&body.JiraToken)
 	}
 	if body.JiraURL == "" {
-		_ = h.DB.QueryRow("SELECT jira_url FROM plans WHERE id = ?", planID).Scan(&body.JiraURL)
+		_ = h.DB.QueryRow("SELECT jira_url FROM teams WHERE id = ?", teamID).Scan(&body.JiraURL)
 	}
 	if body.JiraUser == "" {
-		_ = h.DB.QueryRow("SELECT jira_user FROM plans WHERE id = ?", planID).Scan(&body.JiraUser)
+		_ = h.DB.QueryRow("SELECT jira_user FROM teams WHERE id = ?", teamID).Scan(&body.JiraUser)
 	}
 
 	if body.JiraURL == "" || body.JiraUser == "" || body.JiraToken == "" {
@@ -126,9 +126,9 @@ func (h *JiraHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *JiraHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
+	teamID := teamIDParam(r)
 	user := h.Auth.GetUserFromContext(r.Context())
-	if user == nil || !h.Auth.IsPlanAdmin(user.ID, planID) {
+	if user == nil || !h.Auth.IsTeamAdmin(user.ID, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -144,7 +144,7 @@ func (h *JiraHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client, jql, spField, err := h.getClientForPlan(planID)
+	client, jql, spField, err := h.getClientForTeam(teamID)
 	if err != nil {
 		respondErr(w, 400, err.Error())
 		return
@@ -164,26 +164,26 @@ func (h *JiraHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 
 	id := uuid.NewString()
 	_, err = h.DB.Exec(`
-		INSERT INTO jira_snapshots (id, plan_id, name, start_date, end_date, all_worklogs, data)
+		INSERT INTO jira_snapshots (id, team_id, name, start_date, end_date, all_worklogs, data)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, id, planID, body.Name, body.StartDate, body.EndDate, body.AllWorklogs, string(jsonData))
+	`, id, teamID, body.Name, body.StartDate, body.EndDate, body.AllWorklogs, string(jsonData))
 	if err != nil {
 		respondErr(w, 500, err.Error())
 		return
 	}
 
-	h.GetSnapshotByID(w, r, planID, id)
+	h.GetSnapshotByID(w, r, teamID, id)
 }
 
 func (h *JiraHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
+	teamID := teamIDParam(r)
 
 	rows, err := h.DB.Query(`
-		SELECT id, plan_id, name, start_date, end_date, all_worklogs, created_at, updated_at
+		SELECT id, team_id, name, start_date, end_date, all_worklogs, created_at, updated_at
 		FROM jira_snapshots 
-		WHERE plan_id = ? 
+		WHERE team_id = ? 
 		ORDER BY created_at DESC
-	`, planID)
+	`, teamID)
 	if err != nil {
 		respondErr(w, 500, err.Error())
 		return
@@ -194,7 +194,7 @@ func (h *JiraHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var s models.JiraSnapshot
 		var createdAt, updatedAt string
-		err := rows.Scan(&s.ID, &s.PlanID, &s.Name, &s.StartDate, &s.EndDate, &s.AllWorklogs, &createdAt, &updatedAt)
+		err := rows.Scan(&s.ID, &s.TeamID, &s.Name, &s.StartDate, &s.EndDate, &s.AllWorklogs, &createdAt, &updatedAt)
 		if err != nil {
 			respondErr(w, 500, err.Error())
 			return
@@ -210,20 +210,20 @@ func (h *JiraHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *JiraHandler) GetSnapshot(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
+	teamID := teamIDParam(r)
 	id := chi.URLParam(r, "snapshotID")
-	h.GetSnapshotByID(w, r, planID, id)
+	h.GetSnapshotByID(w, r, teamID, id)
 }
 
-func (h *JiraHandler) GetSnapshotByID(w http.ResponseWriter, r *http.Request, planID, id string) {
+func (h *JiraHandler) GetSnapshotByID(w http.ResponseWriter, r *http.Request, teamID, id string) {
 	var s models.JiraSnapshot
 	var dataStr string
 	var createdAt, updatedAt string
 	err := h.DB.QueryRow(`
-		SELECT id, plan_id, name, start_date, end_date, all_worklogs, data, created_at, updated_at
+		SELECT id, team_id, name, start_date, end_date, all_worklogs, data, created_at, updated_at
 		FROM jira_snapshots 
-		WHERE id = ? AND plan_id = ?
-	`, id, planID).Scan(&s.ID, &s.PlanID, &s.Name, &s.StartDate, &s.EndDate, &s.AllWorklogs, &dataStr, &createdAt, &updatedAt)
+		WHERE id = ? AND team_id = ?
+	`, id, teamID).Scan(&s.ID, &s.TeamID, &s.Name, &s.StartDate, &s.EndDate, &s.AllWorklogs, &dataStr, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		respondErr(w, 404, "snapshot not found")
 		return
@@ -299,10 +299,10 @@ func (h *JiraHandler) GetSnapshotByID(w http.ResponseWriter, r *http.Request, pl
 }
 
 func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
+	teamID := teamIDParam(r)
 	id := chi.URLParam(r, "snapshotID")
 	user := h.Auth.GetUserFromContext(r.Context())
-	if user == nil || !h.Auth.IsPlanAdmin(user.ID, planID) {
+	if user == nil || !h.Auth.IsTeamAdmin(user.ID, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -311,8 +311,8 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 	var allWorklogs bool
 	err := h.DB.QueryRow(`
 		SELECT name, start_date, end_date, all_worklogs, data FROM jira_snapshots 
-		WHERE id = ? AND plan_id = ?
-	`, id, planID).Scan(&name, &startDate, &endDate, &allWorklogs, &oldDataStr)
+		WHERE id = ? AND team_id = ?
+	`, id, teamID).Scan(&name, &startDate, &endDate, &allWorklogs, &oldDataStr)
 	if err == sql.ErrNoRows {
 		respondErr(w, 404, "snapshot not found")
 		return
@@ -326,7 +326,7 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 		_ = json.Unmarshal([]byte(oldDataStr), &oldData)
 	}
 
-	client, jql, spField, err := h.getClientForPlan(planID)
+	client, jql, spField, err := h.getClientForTeam(teamID)
 	if err != nil {
 		respondErr(w, 400, err.Error())
 		return
@@ -408,8 +408,8 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 	_, err = tx.Exec(`
 		UPDATE jira_snapshots 
 		SET data = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ? AND plan_id = ?
-	`, string(jsonData), id, planID)
+		WHERE id = ? AND team_id = ?
+	`, string(jsonData), id, teamID)
 	if err != nil {
 		respondErr(w, 500, err.Error())
 		return
@@ -434,19 +434,19 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.GetSnapshotByID(w, r, planID, id)
+	h.GetSnapshotByID(w, r, teamID, id)
 }
 
 func (h *JiraHandler) DeleteSnapshot(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
+	teamID := teamIDParam(r)
 	id := chi.URLParam(r, "snapshotID")
 	user := h.Auth.GetUserFromContext(r.Context())
-	if user == nil || !h.Auth.IsPlanAdmin(user.ID, planID) {
+	if user == nil || !h.Auth.IsTeamAdmin(user.ID, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
 
-	res, err := h.DB.Exec(`DELETE FROM jira_snapshots WHERE id = ? AND plan_id = ?`, id, planID)
+	res, err := h.DB.Exec(`DELETE FROM jira_snapshots WHERE id = ? AND team_id = ?`, id, teamID)
 	if err != nil {
 		respondErr(w, 500, err.Error())
 		return
@@ -461,10 +461,10 @@ func (h *JiraHandler) DeleteSnapshot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *JiraHandler) UpdateSnapshot(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
+	teamID := teamIDParam(r)
 	id := chi.URLParam(r, "snapshotID")
 	user := h.Auth.GetUserFromContext(r.Context())
-	if user == nil || !h.Auth.IsPlanAdmin(user.ID, planID) {
+	if user == nil || !h.Auth.IsTeamAdmin(user.ID, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -483,8 +483,8 @@ func (h *JiraHandler) UpdateSnapshot(w http.ResponseWriter, r *http.Request) {
 	var allWorklogs bool
 	err := h.DB.QueryRow(`
 		SELECT name, start_date, end_date, all_worklogs, data FROM jira_snapshots 
-		WHERE id = ? AND plan_id = ?
-	`, id, planID).Scan(&oldName, &oldStartDate, &oldEndDate, &allWorklogs, &oldDataStr)
+		WHERE id = ? AND team_id = ?
+	`, id, teamID).Scan(&oldName, &oldStartDate, &oldEndDate, &allWorklogs, &oldDataStr)
 	if err == sql.ErrNoRows {
 		respondErr(w, 404, "snapshot not found")
 		return
@@ -500,7 +500,7 @@ func (h *JiraHandler) UpdateSnapshot(w http.ResponseWriter, r *http.Request) {
 
 	var dataJson *string
 	if oldStartDate != body.StartDate || oldEndDate != body.EndDate {
-		client, jql, spField, err := h.getClientForPlan(planID)
+		client, jql, spField, err := h.getClientForTeam(teamID)
 		if err != nil {
 			respondErr(w, 400, err.Error())
 			return
@@ -540,14 +540,14 @@ func (h *JiraHandler) UpdateSnapshot(w http.ResponseWriter, r *http.Request) {
 		_, err = h.DB.Exec(`
 			UPDATE jira_snapshots 
 			SET name = ?, start_date = ?, end_date = ?, data = ?, updated_at = CURRENT_TIMESTAMP
-			WHERE id = ? AND plan_id = ?
-		`, body.Name, body.StartDate, body.EndDate, *dataJson, id, planID)
+			WHERE id = ? AND team_id = ?
+		`, body.Name, body.StartDate, body.EndDate, *dataJson, id, teamID)
 	} else {
 		_, err = h.DB.Exec(`
 			UPDATE jira_snapshots 
 			SET name = ?, updated_at = CURRENT_TIMESTAMP
-			WHERE id = ? AND plan_id = ?
-		`, body.Name, id, planID)
+			WHERE id = ? AND team_id = ?
+		`, body.Name, id, teamID)
 	}
 
 	if err != nil {
@@ -555,16 +555,16 @@ func (h *JiraHandler) UpdateSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.GetSnapshotByID(w, r, planID, id)
+	h.GetSnapshotByID(w, r, teamID, id)
 }
 
 func (h *JiraHandler) ToggleIssuePlanned(w http.ResponseWriter, r *http.Request) {
-	planID := chi.URLParam(r, "planID")
+	teamID := teamIDParam(r)
 	snapshotID := chi.URLParam(r, "snapshotID")
 	issueKey := chi.URLParam(r, "issueKey")
 
 	user := h.Auth.GetUserFromContext(r.Context())
-	if user == nil || !h.Auth.IsPlanAdmin(user.ID, planID) {
+	if user == nil || !h.Auth.IsTeamAdmin(user.ID, teamID) {
 		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -575,7 +575,7 @@ func (h *JiraHandler) ToggleIssuePlanned(w http.ResponseWriter, r *http.Request)
 	_ = decode(r, &body)
 
 	var dataStr string
-	err := h.DB.QueryRow(`SELECT data FROM jira_snapshots WHERE id = ? AND plan_id = ?`, snapshotID, planID).Scan(&dataStr)
+	err := h.DB.QueryRow(`SELECT data FROM jira_snapshots WHERE id = ? AND team_id = ?`, snapshotID, teamID).Scan(&dataStr)
 	if err == sql.ErrNoRows {
 		respondErr(w, 404, "snapshot not found")
 		return
@@ -614,12 +614,12 @@ func (h *JiraHandler) ToggleIssuePlanned(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_, err = h.DB.Exec(`UPDATE jira_snapshots SET data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND plan_id = ?`, string(updatedBytes), snapshotID, planID)
+	_, err = h.DB.Exec(`UPDATE jira_snapshots SET data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND team_id = ?`, string(updatedBytes), snapshotID, teamID)
 	if err != nil {
 		respondErr(w, 500, err.Error())
 		return
 	}
 
-	h.GetSnapshotByID(w, r, planID, snapshotID)
+	h.GetSnapshotByID(w, r, teamID, snapshotID)
 }
 

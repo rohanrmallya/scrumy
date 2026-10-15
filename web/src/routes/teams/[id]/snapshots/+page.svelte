@@ -1,11 +1,11 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
-  import { api, type JiraSnapshot, type Plan } from '$lib/api';
+  import { api, type JiraSnapshot, type Team } from '$lib/api';
 
-  const planID = $derived($page.params.id as string);
+  const teamID = $derived($page.params.id as string);
 
-  let plan = $state<Plan | null>(null);
+  let team = $state<Team | null>(null);
   let snapshots = $state<JiraSnapshot[]>([]);
   let loading = $state(true);
   let error = $state('');
@@ -20,10 +20,10 @@
     error = '';
     try {
       const [p, sn] = await Promise.all([
-        api.plans.get(planID),
-        api.jira.listSnapshots(planID)
+        api.teams.get(teamID),
+        api.jira.listSnapshots(teamID)
       ]);
-      plan = p;
+      team = p;
       snapshots = sn;
     } catch (e: any) {
       error = e.message;
@@ -54,7 +54,7 @@
   async function deleteSnapshot(id: string) {
     if (!confirm('Are you sure you want to delete this snapshot?')) return;
     try {
-      await api.jira.deleteSnapshot(planID, id);
+      await api.jira.deleteSnapshot(teamID, id);
       snapshots = snapshots.filter(s => s.id !== id);
     } catch (e: any) {
       alert(`Failed to delete snapshot: ${e.message}`);
@@ -86,7 +86,7 @@
     updatingSnapshot = true;
     editSnapshotError = '';
     try {
-      const updated = await api.jira.updateSnapshot(planID, activeEditSnapshot.id, {
+      const updated = await api.jira.updateSnapshot(teamID, activeEditSnapshot.id, {
         name: editSnapshotName.trim(),
         start_date: editSnapshotStart,
         end_date: editSnapshotEnd,
@@ -127,8 +127,8 @@
 <div class="page-content fade-in">
   <!-- Back Link -->
   <div style="margin-bottom: 20px;">
-    <a href="/plans/{planID}" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:6px;">
-      ← Back to Plan Workspace
+    <a href="/teams/{teamID}" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:6px;">
+      ← Back to Team Workspace
     </a>
   </div>
 
@@ -141,12 +141,12 @@
     <div class="badge badge-danger" style="padding:12px 20px; border-radius:8px; font-size:14px; text-transform:none; letter-spacing:0; font-weight:400;">
       ⚠️ {error}
     </div>
-  {:else if plan}
+  {:else if team}
     <!-- Title & Description -->
     <div style="margin-bottom: 24px;">
       <h1 class="text-2xl font-bold">📸 Jira Snapshots</h1>
       <p class="text-sm text-muted" style="margin-top: 4px;">
-        Browse, filter, and manage all Jira snapshots taken for <strong>{plan.name}</strong>.
+        Browse, filter, and manage all Jira snapshots taken for <strong>{team.name}</strong>.
       </p>
     </div>
 
@@ -225,7 +225,7 @@
             >
               <div style="flex: 1; min-width: 0; margin-right: 16px;">
                 <a
-                  href="/plans/{planID}/snapshots/{s.id}"
+                  href="/teams/{teamID}/snapshots/{s.id}"
                   style="display: inline-block; font-weight: 600; font-size: 15px; color: var(--c-primary); text-decoration: none; margin-bottom: 4px;"
                   class="hover-underline"
                 >
@@ -241,10 +241,10 @@
               </div>
 
               <div class="flex gap-2">
-                <a href="/plans/{planID}/snapshots/{s.id}" class="btn btn-secondary btn-sm">
+                <a href="/teams/{teamID}/snapshots/{s.id}" class="btn btn-secondary btn-sm">
                   View Details
                 </a>
-                {#if plan.is_admin}
+                {#if team.is_admin}
                   <button
                     class="btn btn-secondary btn-sm btn-icon"
                     style="color: var(--c-primary); width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center;"

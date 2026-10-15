@@ -44,6 +44,14 @@ func Open(path string) (*DB, error) {
 }
 
 func (db *DB) Migrate() error {
+	// Preamble: schema.sql pre-creates empty teams/team_admins tables even on
+	// pre-rename databases. Remove those empty shells when legacy tables exist
+	// so subsequent migrations (and the Migration 7 RENAME, which preserves
+	// foreign-key references) operate on the real data.
+	if err := dropEmptyTeamShells(db); err != nil {
+		return err
+	}
+
 	// Migration 1: Add template_id to presentations if not exists
 	var hasTemplateID bool
 	rows, err := db.Query("PRAGMA table_info(presentations)")
@@ -73,18 +81,23 @@ func (db *DB) Migrate() error {
 		}
 	}
 
-	// Migration 2: Add Jira columns to plans table if not exists
-	planColumns, err := db.getTableColumns("plans")
+	// Migration 2: Add Jira columns to teams table if not exists
+	// (pre-rename databases carry this table as "plans"; Migration 7 renames it)
+	teamTable := "teams"
+	if !tableExists(db, "teams") && tableExists(db, "plans") {
+		teamTable = "plans"
+	}
+	planColumns, err := db.getTableColumns(teamTable)
 	if err != nil {
-		return fmt.Errorf("get plans columns: %w", err)
+		return fmt.Errorf("get teams columns: %w", err)
 	}
 	newCols := map[string]string{
-		"jira_url":      "ALTER TABLE plans ADD COLUMN jira_url TEXT NOT NULL DEFAULT ''",
-		"jira_user":     "ALTER TABLE plans ADD COLUMN jira_user TEXT NOT NULL DEFAULT ''",
-		"jira_token":    "ALTER TABLE plans ADD COLUMN jira_token TEXT NOT NULL DEFAULT ''",
-		"jira_jql":      "ALTER TABLE plans ADD COLUMN jira_jql TEXT NOT NULL DEFAULT ''",
-		"jira_sp_field": "ALTER TABLE plans ADD COLUMN jira_sp_field TEXT NOT NULL DEFAULT ''",
-		"jira_insecure": "ALTER TABLE plans ADD COLUMN jira_insecure INTEGER NOT NULL DEFAULT 0",
+		"jira_url":      "ALTER TABLE " + teamTable + " ADD COLUMN jira_url TEXT NOT NULL DEFAULT ''",
+		"jira_user":     "ALTER TABLE " + teamTable + " ADD COLUMN jira_user TEXT NOT NULL DEFAULT ''",
+		"jira_token":    "ALTER TABLE " + teamTable + " ADD COLUMN jira_token TEXT NOT NULL DEFAULT ''",
+		"jira_jql":      "ALTER TABLE " + teamTable + " ADD COLUMN jira_jql TEXT NOT NULL DEFAULT ''",
+		"jira_sp_field": "ALTER TABLE " + teamTable + " ADD COLUMN jira_sp_field TEXT NOT NULL DEFAULT ''",
+		"jira_insecure": "ALTER TABLE " + teamTable + " ADD COLUMN jira_insecure INTEGER NOT NULL DEFAULT 0",
 	}
 	for col, sqlStmt := range newCols {
 		found := false
@@ -95,7 +108,7 @@ func (db *DB) Migrate() error {
 			}
 		}
 		if !found {
-			log.Printf("⚡ Migrating: adding %s to plans table\n", col)
+			log.Printf("⚡ Migrating: adding %s to %s table\n", col, teamTable)
 			if _, err := db.Exec(sqlStmt); err != nil {
 				return fmt.Errorf("add column %s: %w", col, err)
 			}
@@ -106,7 +119,7 @@ func (db *DB) Migrate() error {
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS jira_snapshots (
 			id            TEXT PRIMARY KEY,
-			plan_id       TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+			team_id       TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
 			name          TEXT NOT NULL,
 			start_date    TEXT NOT NULL, -- YYYY-MM-DD
 			end_date      TEXT NOT NULL, -- YYYY-MM-DD
@@ -119,9 +132,18 @@ func (db *DB) Migrate() error {
 	if err != nil {
 		return fmt.Errorf("create jira_snapshots table: %w", err)
 	}
-	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_jira_snapshots_plan_id ON jira_snapshots(plan_id)`)
-	if err != nil {
-		return fmt.Errorf("create index idx_jira_snapshots_plan_id: %w", err)
+	// Index the owning-team column under whichever name this database uses;
+	// Migration 7 normalizes everything to team_id.
+	if columnExists(db, "jira_snapshots", "team_id") {
+		_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_jira_snapshots_team_id ON jira_snapshots(team_id)`)
+		if err != nil {
+			return fmt.Errorf("create index idx_jira_snapshots_team_id: %w", err)
+		}
+	} else {
+		_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_jira_snapshots_plan_id ON jira_snapshots(plan_id)`)
+		if err != nil {
+			return fmt.Errorf("create index idx_jira_snapshots_plan_id: %w", err)
+		}
 	}
 
 	// Migration 4: Add all_worklogs to jira_snapshots if not exists
@@ -201,6 +223,136 @@ func (db *DB) Migrate() error {
 		}
 	}
 
+	// Migration 7: Rename plans -> teams, plan_admins -> team_admins, plan_id -> team_id
+	if err := migratePlansToTeams(db); err != nil {
+		return fmt.Errorf("migrate plans to teams: %w", err)
+	}
+
+	return nil
+}
+
+// tableExists reports whether a table exists in the database.
+func tableExists(db *DB, table string) bool {
+	var name string
+	err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name)
+	return err == nil && name == table
+}
+
+// columnExists reports whether a column exists on a table.
+func columnExists(db *DB, table, column string) bool {
+	cols, err := db.getTableColumns(table)
+	if err != nil {
+		return false
+	}
+	for _, c := range cols {
+		if c == column {
+			return true
+		}
+	}
+	return false
+}
+
+// isTableEmpty reports whether a table holds zero rows.
+func isTableEmpty(db *DB, table string) bool {
+	var count int
+	if err := db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", table)).Scan(&count); err != nil {
+		return false
+	}
+	return count == 0
+}
+
+// dropEmptyTeamShells removes empty teams/team_admins tables pre-created by
+// schema.sql when the legacy plans/plan_admins tables hold the real data.
+// This lets Migration 7 use RENAME (which keeps FK references intact).
+func dropEmptyTeamShells(db *DB) error {
+	if tableExists(db, "plans") && tableExists(db, "teams") && isTableEmpty(db, "teams") {
+		log.Println("⚡ Migrating: dropping empty teams shell pre-created by schema")
+		if _, err := db.Exec("DROP TABLE teams"); err != nil {
+			return fmt.Errorf("drop empty teams shell: %w", err)
+		}
+	}
+	if tableExists(db, "plan_admins") && tableExists(db, "team_admins") && isTableEmpty(db, "team_admins") {
+		log.Println("⚡ Migrating: dropping empty team_admins shell pre-created by schema")
+		if _, err := db.Exec("DROP TABLE team_admins"); err != nil {
+			return fmt.Errorf("drop empty team_admins shell: %w", err)
+		}
+	}
+	return nil
+}
+
+// migratePlansToTeams renames the top-level "plans" concept to "teams".
+// It is idempotent: fresh databases already use the new names and are left untouched.
+func migratePlansToTeams(db *DB) error {
+	if tableExists(db, "plans") && !tableExists(db, "teams") {
+		log.Println("⚡ Migrating: renaming plans table to teams")
+		if _, err := db.Exec("ALTER TABLE plans RENAME TO teams"); err != nil {
+			return fmt.Errorf("rename plans to teams: %w", err)
+		}
+	}
+	if tableExists(db, "plan_admins") && !tableExists(db, "team_admins") {
+		log.Println("⚡ Migrating: renaming plan_admins table to team_admins")
+		if _, err := db.Exec("ALTER TABLE plan_admins RENAME TO team_admins"); err != nil {
+			return fmt.Errorf("rename plan_admins to team_admins: %w", err)
+		}
+	}
+	// Fallback: both generations exist with data (should not happen via normal
+	// upgrades). Merge legacy rows, then drop the legacy tables.
+	if tableExists(db, "plans") && tableExists(db, "teams") {
+		log.Println("⚠️ Migrating: both plans and teams hold data; merging into teams")
+		if columnExists(db, "plans", "jira_url") {
+			_, err := db.Exec(`
+				INSERT INTO teams (id, name, created_at, updated_at, jira_url, jira_user, jira_token, jira_jql, jira_sp_field, jira_insecure)
+				SELECT id, name, created_at, updated_at, jira_url, jira_user, jira_token, jira_jql, jira_sp_field, jira_insecure
+				FROM plans WHERE id NOT IN (SELECT id FROM teams)`)
+			if err != nil {
+				return fmt.Errorf("merge plans into teams: %w", err)
+			}
+		} else {
+			_, err := db.Exec(`INSERT INTO teams (id, name) SELECT id, name FROM plans WHERE id NOT IN (SELECT id FROM teams)`)
+			if err != nil {
+				return fmt.Errorf("merge plans into teams: %w", err)
+			}
+		}
+		if _, err := db.Exec("DROP TABLE plans"); err != nil {
+			return fmt.Errorf("drop merged plans table: %w", err)
+		}
+	}
+	if tableExists(db, "plan_admins") && tableExists(db, "team_admins") {
+		log.Println("⚠️ Migrating: both plan_admins and team_admins hold data; merging")
+		if _, err := db.Exec(`INSERT OR IGNORE INTO team_admins (team_id, user_id) SELECT plan_id, user_id FROM plan_admins`); err != nil {
+			return fmt.Errorf("merge plan_admins into team_admins: %w", err)
+		}
+		if _, err := db.Exec("DROP TABLE plan_admins"); err != nil {
+			return fmt.Errorf("drop merged plan_admins table: %w", err)
+		}
+	}
+
+	for _, table := range []string{"capacity_plans", "presentations", "jira_snapshots", "team_admins"} {
+		if !tableExists(db, table) {
+			continue
+		}
+		if columnExists(db, table, "plan_id") && !columnExists(db, table, "team_id") {
+			log.Printf("⚡ Migrating: renaming %s.plan_id to team_id\n", table)
+			if _, err := db.Exec(fmt.Sprintf("ALTER TABLE %s RENAME COLUMN plan_id TO team_id", table)); err != nil {
+				return fmt.Errorf("rename %s.plan_id: %w", table, err)
+			}
+		}
+	}
+
+	// Replace legacy plan_id indexes with team_id equivalents.
+	for _, stmt := range []string{
+		"DROP INDEX IF EXISTS idx_capacity_plans_plan_id",
+		"DROP INDEX IF EXISTS idx_presentations_plan_id",
+		"DROP INDEX IF EXISTS idx_jira_snapshots_plan_id",
+		"CREATE INDEX IF NOT EXISTS idx_capacity_plans_team_id ON capacity_plans(team_id)",
+		"CREATE INDEX IF NOT EXISTS idx_presentations_team_id ON presentations(team_id)",
+		"CREATE INDEX IF NOT EXISTS idx_jira_snapshots_team_id ON jira_snapshots(team_id)",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("update team indexes (%s): %w", stmt, err)
+		}
+	}
+
 	return nil
 }
 
@@ -275,24 +427,24 @@ func (db *DB) SeedRootUser() error {
 		}
 	}
 
-	// Link all existing plans to the super admin if they don't have an admin
-	rows, err := db.Query("SELECT id FROM plans WHERE id NOT IN (SELECT plan_id FROM plan_admins)")
+	// Link all existing teams to the super admin if they don't have an admin
+	rows, err := db.Query("SELECT id FROM teams WHERE id NOT IN (SELECT team_id FROM team_admins)")
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
-	var planIDs []string
+	var teamIDs []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			return err
 		}
-		planIDs = append(planIDs, id)
+		teamIDs = append(teamIDs, id)
 	}
 
-	for _, planID := range planIDs {
-		_, err = db.Exec("INSERT INTO plan_admins (plan_id, user_id) VALUES (?, ?)", planID, superAdminID)
+	for _, teamID := range teamIDs {
+		_, err = db.Exec("INSERT INTO team_admins (team_id, user_id) VALUES (?, ?)", teamID, superAdminID)
 		if err != nil {
 			return err
 		}

@@ -2,12 +2,12 @@
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { api, type JiraSnapshot, type Plan, type JiraUserRefreshDelta } from '$lib/api';
+  import { api, type JiraSnapshot, type Team, type JiraUserRefreshDelta } from '$lib/api';
 
-  const planID = $derived($page.params.id as string);
+  const teamID = $derived($page.params.id as string);
   const snapshotID = $derived($page.params.snapid as string);
 
-  let plan = $state<Plan | null>(null);
+  let team = $state<Team | null>(null);
   let snapshot = $state<JiraSnapshot | null>(null);
   let loading = $state(true);
   let error = $state('');
@@ -177,10 +177,10 @@
     error = '';
     try {
       const [p, s] = await Promise.all([
-        api.plans.get(planID),
-        api.jira.getSnapshot(planID, snapshotID)
+        api.teams.get(teamID),
+        api.jira.getSnapshot(teamID, snapshotID)
       ]);
-      plan = p;
+      team = p;
       snapshot = s;
       if (s) {
         showAllWorklogs = s.all_worklogs;
@@ -317,7 +317,7 @@
     }
     togglingIssueKey = issueKey;
     try {
-      const updated = await api.jira.toggleIssuePlanned(planID, snapshotID, issueKey, targetVal);
+      const updated = await api.jira.toggleIssuePlanned(teamID, snapshotID, issueKey, targetVal);
       snapshot = updated;
     } catch (e: any) {
       alert(`Failed to update issue: ${e.message}`);
@@ -537,7 +537,7 @@
     updatingSnapshot = true;
     editSnapshotError = '';
     try {
-      const updated = await api.jira.updateSnapshot(planID, snapshot.id, {
+      const updated = await api.jira.updateSnapshot(teamID, snapshot.id, {
         name: editSnapshotName.trim(),
         start_date: editSnapshotStart,
         end_date: editSnapshotEnd,
@@ -555,7 +555,7 @@
     if (!confirm('Re-fetch snapshot data from Jira?')) return;
     refreshing = true;
     try {
-      const updated = await api.jira.refreshSnapshot(planID, snapshotID);
+      const updated = await api.jira.refreshSnapshot(teamID, snapshotID);
       snapshot = updated;
       if (updated) {
         showAllWorklogs = updated.all_worklogs;
@@ -574,8 +574,8 @@
     if (!confirm('Are you sure you want to delete this snapshot?')) return;
     deleting = true;
     try {
-      await api.jira.deleteSnapshot(planID, snapshotID);
-      goto(`/plans/${planID}`);
+      await api.jira.deleteSnapshot(teamID, snapshotID);
+      goto(`/teams/${teamID}`);
     } catch (e: any) {
       alert(`Failed to delete: ${e.message}`);
       deleting = false;
@@ -585,8 +585,8 @@
   async function createRetroFromSnapshot() {
     if (!snapshot) return;
     try {
-      const title = `${snapshot.name} Retro`;
-      const pres = await api.presentations.create(planID, {
+      const title = snapshot.name.toLowerCase().endsWith('retro') ? snapshot.name : `${snapshot.name} Retro`;
+      const pres = await api.presentations.create(teamID, {
         type: 'retro',
         template_id: 'default',
         title: title,
@@ -609,14 +609,14 @@
         closing_text: '',
       };
 
-      await api.presentations.update(planID, pres.id, {
+      await api.presentations.update(teamID, pres.id, {
         title: title,
         template_id: 'default',
         sprint_name: snapshot.name,
         content: content,
       });
 
-      goto(`/plans/${planID}/presentations/${pres.id}/edit`);
+      goto(`/teams/${teamID}/presentations/${pres.id}/edit`);
     } catch (e: any) {
       alert(`Failed to create presentation: ${e.message}`);
     }
@@ -727,12 +727,12 @@
       ⚠️ {error}
     </div>
     <div style="margin-top:20px;">
-      <a href="/plans/{planID}" class="btn btn-secondary">← Back to Workspace</a>
+      <a href="/teams/{teamID}" class="btn btn-secondary">← Back to Workspace</a>
     </div>
   {:else if snapshot}
     <!-- Back Navigation Link -->
     <div style="margin-bottom: 10px;">
-      <a href="/plans/{planID}" style="display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--c-text-2); font-weight:500;">
+      <a href="/teams/{teamID}" style="display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--c-text-2); font-weight:500;">
         <span style="font-size:15px;">←</span> Back to Sprints
       </a>
     </div>
@@ -740,7 +740,7 @@
     <!-- Header Actions Panel -->
     <div class="flex justify-between items-center" style="margin-bottom: 18px; gap: 16px; flex-wrap: wrap;">
       <div>
-        <h1 style="font-size:28px; font-weight:800; letter-spacing:-0.02em; margin:0; color:#11142b;">{snapshot.name.toLowerCase().endsWith('retro') ? snapshot.name : `${snapshot.name} Retro`}</h1>
+        <h1 style="font-size:28px; font-weight:800; letter-spacing:-0.02em; margin:0; color:#11142b;">{snapshot.name}</h1>
         <p style="margin-top:4px; display:flex; align-items:center; gap:8px; font-size:13px; color:var(--c-text-3);">
           {formatSprintRange(snapshot.start_date, snapshot.end_date)}
           {#if showAllWorklogs && snapshot.data.totals_all}
@@ -755,7 +755,7 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Export to CSV
         </button>
-        {#if plan?.is_admin}
+        {#if team?.is_admin}
           <button onclick={openEditSnapshot} style="display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--c-border-2); border-radius:8px; padding:8px 14px; font-size:13px; font-weight:500; color:var(--c-text);">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
             Edit Settings
@@ -1045,8 +1045,8 @@
                                 {@const isWlUnplanned = !!issueMap[wl.issue_key]?.is_unplanned}
                                 <tr style="border-bottom:1px solid var(--c-border-2);">
                                   <td style="padding:8px; font-weight:600; white-space:nowrap;">
-                                    {#if plan?.jira_url}
-                                      <a href="{plan.jira_url}/browse/{wl.issue_key}" target="_blank" class="text-primary" style="text-decoration:none;">{wl.issue_key}</a>
+                                    {#if team?.jira_url}
+                                      <a href="{team.jira_url}/browse/{wl.issue_key}" target="_blank" class="text-primary" style="text-decoration:none;">{wl.issue_key}</a>
                                     {:else}
                                       {wl.issue_key}
                                     {/if}
@@ -1180,15 +1180,15 @@
                   {#each filteredIssues as issue}
                     <tr style="border-bottom:1px solid var(--c-border); background:var(--c-surface);">
                       <td style="padding:12px 16px; font-weight:600; white-space:nowrap;">
-                        {#if plan?.jira_url}
-                          <a href="{plan.jira_url}/browse/{issue.key}" target="_blank" class="text-primary" style="text-decoration:none;">{issue.key}</a>
+                        {#if team?.jira_url}
+                          <a href="{team.jira_url}/browse/{issue.key}" target="_blank" class="text-primary" style="text-decoration:none;">{issue.key}</a>
                         {:else}
                           {issue.key}
                         {/if}
                       </td>
                       <td style="padding:12px 16px; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title={issue.summary}>{issue.summary}</td>
                       <td style="padding:12px 16px; white-space:nowrap;">
-                        {#if plan?.is_admin}
+                        {#if team?.is_admin}
                           <button 
                             type="button"
                             class="badge {issue.is_unplanned ? 'badge-warning' : 'badge-default'}" 
@@ -1501,9 +1501,9 @@
                 <div style="border-top:1px solid var(--c-border); margin-top:16px; padding-top:14px;">
                   <div style="font-size:13px; font-weight:700; color:#11142b; margin-bottom:10px;">What's included</div>
                   <div style="font-size:11px; color:var(--c-text-2); display:flex; align-items:center; gap:6px; margin-bottom:6px;"><span style="color:#2563eb;">⛛</span> JQL filter</div>
-                  <div style="position:relative; background:var(--c-bg); border:1px solid var(--c-border); border-radius:8px; padding:8px 30px 8px 10px; font-family:ui-monospace, monospace; font-size:11px; color:var(--c-text-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title={plan?.jira_jql || '—'}>
-                    {plan?.jira_jql || '—'}
-                    <button onclick={() => copyJql(plan?.jira_jql || '')} title="Copy JQL" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--c-text-3); cursor:pointer; font-size:13px;">⧉</button>
+                  <div style="position:relative; background:var(--c-bg); border:1px solid var(--c-border); border-radius:8px; padding:8px 30px 8px 10px; font-family:ui-monospace, monospace; font-size:11px; color:var(--c-text-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title={team?.jira_jql || '—'}>
+                    {team?.jira_jql || '—'}
+                    <button onclick={() => copyJql(team?.jira_jql || '')} title="Copy JQL" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--c-text-3); cursor:pointer; font-size:13px;">⧉</button>
                   </div>
                   <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; font-size:11px;">
                     <div>

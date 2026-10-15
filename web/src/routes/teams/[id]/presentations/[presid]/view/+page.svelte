@@ -7,7 +7,7 @@
   import MinimalistTemplate from '$lib/templates/Minimalist.svelte';
   import FireTemplate from '$lib/templates/Fire.svelte';
 
-  const planID = $derived($page.params.id);
+  const teamID = $derived($page.params.id);
   const presID = $derived($page.params.presid);
 
   let pres = $state<Presentation | null>(null);
@@ -22,7 +22,7 @@
 
   onMount(async () => {
     document.body.style.overflow = 'hidden';
-    pres = await api.presentations.get(planID, presID);
+    pres = await api.presentations.get(teamID, presID);
     buildSlides();
     loading = false;
 
@@ -46,7 +46,7 @@
     if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') prev();
     if (e.key === 'Escape') {
       if (fullscreen) document.exitFullscreen?.().catch(() => {});
-      else goto(`/plans/${planID}`);
+      else goto(`/teams/${teamID}`);
     }
   }
 
@@ -85,7 +85,7 @@
   async function addFeedbackItem() {
     if (!newFeedback.trim()) return;
     addingFeedback = true;
-    pres = await api.presentations.addFeedback(planID, presID, newFeedback.trim());
+    pres = await api.presentations.addFeedback(teamID, presID, newFeedback.trim());
     buildSlides();
     newFeedback = '';
     addingFeedback = false;
@@ -109,7 +109,7 @@
 {:else}
 <div class="slide-viewer" class:is-fullscreen={fullscreen}>
   <div class="slide-controls" style="background: {pres?.template_id === 'minimalist' ? '#f3f4f6' : pres?.template_id === 'fire' ? '#1A0000' : 'rgba(0,0,0,0.5)'}; border-bottom: 1px solid {pres?.template_id === 'minimalist' ? '#e5e7eb' : pres?.template_id === 'fire' ? 'rgba(255,100,50,0.2)' : 'rgba(255,255,255,0.1)'}">
-    <a href="/plans/{planID}" style="color: {pres?.template_id === 'minimalist' ? '#4b5563' : pres?.template_id === 'fire' ? '#FF8C42' : 'rgba(255,255,255,0.6)'}; font-size:13px;text-decoration:none;">← Back</a>
+    <a href="/teams/{teamID}" style="color: {pres?.template_id === 'minimalist' ? '#4b5563' : pres?.template_id === 'fire' ? '#FF8C42' : 'rgba(255,255,255,0.6)'}; font-size:13px;text-decoration:none;">← Back</a>
     <div style="color: {pres?.template_id === 'minimalist' ? '#111827' : pres?.template_id === 'fire' ? '#FFAA00' : 'rgba(255,255,255,0.7)'}; font-size:13px;">{pres?.title} · {currentSlide + 1} / {slides.length}</div>
     <button class="btn btn-ghost btn-sm" onclick={toggleFullscreen}>{fullscreen ? 'Exit' : '⛶ Fullscreen'}</button>
   </div>

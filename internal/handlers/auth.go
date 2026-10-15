@@ -178,10 +178,15 @@ func (h *AuthHandler) RequireAuth(next http.Handler) http.Handler {
 	})
 }
 
-func (h *AuthHandler) IsPlanAdmin(userID, planID string) bool {
+func (h *AuthHandler) IsTeamAdmin(userID, teamID string) bool {
 	var count int
-	err := h.DB.QueryRow("SELECT COUNT(*) FROM plan_admins WHERE plan_id = ? AND user_id = ?", planID, userID).Scan(&count)
+	err := h.DB.QueryRow("SELECT COUNT(*) FROM team_admins WHERE team_id = ? AND user_id = ?", teamID, userID).Scan(&count)
 	return err == nil && count > 0
+}
+
+// IsPlanAdmin is a deprecated alias for IsTeamAdmin, kept for backward compatibility.
+func (h *AuthHandler) IsPlanAdmin(userID, planID string) bool {
+	return h.IsTeamAdmin(userID, planID)
 }
 
 // ─── Super Admin ─────────────────────────────────────────────────────────────

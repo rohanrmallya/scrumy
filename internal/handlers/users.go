@@ -312,7 +312,7 @@ func (h *UsersHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	// Explicitly clear dependent rows for DBs created before FK enforcement,
 	// then delete the user (FK cascade covers newer DBs).
 	h.DB.Exec("DELETE FROM sessions WHERE user_id = ?", targetID)
-	h.DB.Exec("DELETE FROM plan_admins WHERE user_id = ?", targetID)
+	h.DB.Exec("DELETE FROM team_admins WHERE user_id = ?", targetID)
 	res, err := h.DB.Exec("DELETE FROM users WHERE id = ?", targetID)
 	if err != nil {
 		respondErr(w, http.StatusInternalServerError, "failed to delete user")

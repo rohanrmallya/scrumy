@@ -37,7 +37,7 @@
 
     {#if $page.url.pathname !== '/'}
       <div class="navbar-divider"></div>
-      <a href="/" class="btn btn-ghost btn-sm">← All Plans</a>
+      <a href="/" class="btn btn-ghost btn-sm">← All Teams</a>
     {/if}
   </nav>
   <main style="flex:1">

@@ -1,6 +1,6 @@
 -- Scrumy Database Schema
 
-CREATE TABLE IF NOT EXISTS plans (
+CREATE TABLE IF NOT EXISTS teams (
     id            TEXT PRIMARY KEY,
     name          TEXT NOT NULL,
     jira_url      TEXT NOT NULL DEFAULT '',
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS plans (
 
 CREATE TABLE IF NOT EXISTS jira_snapshots (
     id            TEXT PRIMARY KEY,
-    plan_id       TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    team_id       TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
     name          TEXT NOT NULL,
     start_date    TEXT NOT NULL, -- YYYY-MM-DD
     end_date      TEXT NOT NULL, -- YYYY-MM-DD
@@ -25,11 +25,9 @@ CREATE TABLE IF NOT EXISTS jira_snapshots (
     updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_jira_snapshots_plan_id ON jira_snapshots(plan_id);
-
 CREATE TABLE IF NOT EXISTS capacity_plans (
     id                  TEXT PRIMARY KEY,
-    plan_id             TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    team_id             TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
     name                TEXT NOT NULL,
     status              TEXT NOT NULL DEFAULT 'draft', -- draft | active | archived
     hours_per_sp        REAL NOT NULL DEFAULT 8,
@@ -67,7 +65,7 @@ CREATE TABLE IF NOT EXISTS sprint_leaves (
 
 CREATE TABLE IF NOT EXISTS presentations (
     id          TEXT PRIMARY KEY,
-    plan_id     TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    team_id     TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
     type        TEXT NOT NULL, -- intro | retro
     template_id TEXT NOT NULL DEFAULT 'default', -- default | minimalist
     title       TEXT NOT NULL,
@@ -93,10 +91,10 @@ CREATE TABLE IF NOT EXISTS users (
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS plan_admins (
-    plan_id TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS team_admins (
+    team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    PRIMARY KEY (plan_id, user_id)
+    PRIMARY KEY (team_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -106,11 +104,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_capacity_plans_plan_id ON capacity_plans(plan_id);
+-- NOTE: team_id indexes are created by Migration 7 (migratePlansToTeams), not here,
+-- so that opening a pre-rename database (with plan_id columns) does not fail.
 CREATE INDEX IF NOT EXISTS idx_team_members_capacity_plan_id ON team_members(capacity_plan_id);
 CREATE INDEX IF NOT EXISTS idx_sprints_capacity_plan_id ON sprints(capacity_plan_id);
 CREATE INDEX IF NOT EXISTS idx_sprint_leaves_sprint_id ON sprint_leaves(sprint_id);
-CREATE INDEX IF NOT EXISTS idx_presentations_plan_id ON presentations(plan_id);
 
 CREATE TABLE IF NOT EXISTS jira_snapshot_refresh_logs (
     id                  TEXT PRIMARY KEY,

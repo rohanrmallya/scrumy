@@ -12,13 +12,13 @@ Sprint planning and retrospectives are often plagued by manual effort and guessw
 2. **Scattered Retro Data**: Calculating actual worklogged hours, average hours per story point, and closed issues requires tedious manual spreadsheet calculations.
 3. **Manual Presentations**: Creating sprint kickoff (intro) and retro slide decks involves constant copy-pasting of charts and leaderboard statistics.
 
-**Scrumy solves this** by hosting planning tools, Jira date-bounded snapshots, and presentation slides under a unified, shareable plan workspace.
+**Scrumy solves this** by hosting planning tools, Jira date-bounded snapshots, and presentation slides under a unified, shareable team workspace.
 
 ---
 
 ## ✨ Core Features
 
-### 1. Plan Workspaces & Administration
+### 1. Team Workspaces & Administration
 
 - Create dedicated spaces for separate teams.
 - Admin-level access control: only designated administrators can edit capacity plans, adjust Jira credentials, or delete snapshots.
@@ -156,8 +156,8 @@ Scrumy runs on a SQLite database (`scrumy.db`) with auto-applied migrations defi
 
 - `users`: Stores user roles (`admin` | `user`), credentials, and bcrypt password hashes.
 - `sessions`: Handles active user authentication cookies.
-- `plans`: Stores the workspaces, plan admins, and Jira credentials.
-- `plan_admins`: Junction table mapping plans to admin users.
+- `teams`: Stores the workspaces, team admins, and Jira credentials.
+- `team_admins`: Junction table mapping teams to admin users.
 - `capacity_plans`: Stores active, draft, or archived capacity profiles, loading factors, and productive hour variables.
 - `team_members`: Lists team members and their utilization levels.
 - `sprints`: Stores sprint scheduling dates.

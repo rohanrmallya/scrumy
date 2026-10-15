@@ -1,19 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { api, type Plan } from '$lib/api';
+  import { api, type Team } from '$lib/api';
   import { user } from '$lib/auth';
 
-  let plans = $state<Plan[]>([]);
+  let teams = $state<Team[]>([]);
   let loading = $state(true);
   let creating = $state(false);
-  let newPlanName = $state('');
+  let newTeamName = $state('');
   let showCreate = $state(false);
   let error = $state('');
 
   onMount(async () => {
     try {
-      plans = await api.plans.list();
+      teams = await api.teams.list();
     } catch (e: any) {
       error = e.message;
     } finally {
@@ -21,12 +21,12 @@
     }
   });
 
-  async function createPlan() {
-    if (!newPlanName.trim()) return;
+  async function createTeam() {
+    if (!newTeamName.trim()) return;
     creating = true;
     try {
-      const plan = await api.plans.create(newPlanName.trim());
-      goto(`/plans/${plan.id}`);
+      const team = await api.teams.create(newTeamName.trim());
+      goto(`/teams/${team.id}`);
     } catch (e: any) {
       error = e.message;
       creating = false;
@@ -34,8 +34,8 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') createPlan();
-    if (e.key === 'Escape') { showCreate = false; newPlanName = ''; }
+    if (e.key === 'Enter') createTeam();
+    if (e.key === 'Escape') { showCreate = false; newTeamName = ''; }
   }
 
   function formatDate(iso: string) {
@@ -45,20 +45,20 @@
   }
 
   const icons = ['📊', '🚀', '🎯', '⚡', '💡', '🔮', '🛠️', '📈'];
-  function planIcon(id: string) {
+  function teamIcon(id: string) {
     const n = id.charCodeAt(0) % icons.length;
     return icons[n];
   }
 </script>
 
 <svelte:head>
-  <title>Scrumy – Your Agile Plans</title>
+  <title>Scrumy – Your Agile Teams</title>
 </svelte:head>
 
 <div class="page-content fade-in">
   <div style="text-align:center; margin-bottom:40px;">
-    <h1 class="text-2xl font-bold" style="margin-bottom:8px;">Agile Plans</h1>
-    <p class="text-muted">Browse public plans or sign in to create and manage your own.</p>
+    <h1 class="text-2xl font-bold" style="margin-bottom:8px;">Agile Teams</h1>
+    <p class="text-muted">Browse public teams or sign in to create and manage your own.</p>
   </div>
 
   {#if error}
@@ -80,26 +80,26 @@
         {#if showCreate}
           <div style="padding:20px; width:100%; display:flex; flex-direction:column; gap:10px;"
                onclick={(e) => e.stopPropagation()} role="none">
-            <span class="font-semibold" style="font-size:14px;">New Plan Name</span>
+            <span class="font-semibold" style="font-size:14px;">New Team Name</span>
             <input
               class="input"
-              bind:value={newPlanName}
+              bind:value={newTeamName}
               placeholder="e.g. Q3 Phoenix Release"
               onkeydown={onKeydown}
               autofocus
             />
             <div class="flex gap-2" style="justify-content:flex-end;">
-              <button class="btn btn-secondary btn-sm" onclick={() => { showCreate = false; newPlanName = ''; }}>Cancel</button>
-              <button class="btn btn-primary btn-sm" onclick={createPlan} disabled={creating || !newPlanName.trim()}>
-                {creating ? 'Creating…' : 'Create Plan'}
+              <button class="btn btn-secondary btn-sm" onclick={() => { showCreate = false; newTeamName = ''; }}>Cancel</button>
+              <button class="btn btn-primary btn-sm" onclick={createTeam} disabled={creating || !newTeamName.trim()}>
+                {creating ? 'Creating…' : 'Create Team'}
               </button>
             </div>
           </div>
         {:else}
           <div style="width:48px;height:48px;background:var(--c-primary-lt);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--c-primary);">+</div>
           <div style="text-align:center;">
-            <p class="font-semibold">Create New Plan</p>
-            <p class="text-sm text-muted" style="margin-top:4px;">Start a new agile plan</p>
+            <p class="font-semibold">Create New Team</p>
+            <p class="text-sm text-muted" style="margin-top:4px;">Start a new agile team</p>
           </div>
         {/if}
       </div>
@@ -116,9 +116,9 @@
         </div>
       {/each}
     {:else}
-      {#each plans as plan (plan.id)}
+      {#each teams as team (team.id)}
         <a
-          href="/plans/{plan.id}"
+          href="/teams/{team.id}"
           class="card"
           style="display:block; text-decoration:none; cursor:pointer; transition:all 200ms ease; min-height:160px; position:relative;"
           onmouseover={e => (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'}
@@ -126,20 +126,20 @@
           onfocus={e => (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'}
           onblur={e => (e.currentTarget as HTMLElement).style.transform = ''}
         >
-          {#if plan.is_admin}
+          {#if team.is_admin}
             <div class="admin-badge">Owner</div>
           {/if}
           <div class="card-body" style="display:flex;flex-direction:column;gap:12px;height:100%;">
             <div style="width:42px;height:42px;background:var(--c-surface-2);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;">
-              {planIcon(plan.id)}
+              {teamIcon(team.id)}
             </div>
             <div style="flex:1;">
-              <p class="font-semibold" style="font-size:16px; margin-bottom:4px;">{plan.name}</p>
+              <p class="font-semibold" style="font-size:16px; margin-bottom:4px;">{team.name}</p>
               <p class="text-sm text-muted">
-                {plan.capacity_plan_count} capacity plan{plan.capacity_plan_count !== 1 ? 's' : ''} &bull; {plan.presentation_count} presentation{plan.presentation_count !== 1 ? 's' : ''}
+                {team.capacity_plan_count} capacity plan{team.capacity_plan_count !== 1 ? 's' : ''} &bull; {team.presentation_count} presentation{team.presentation_count !== 1 ? 's' : ''}
               </p>
             </div>
-            <p class="text-xs text-muted">Updated {formatDate(plan.updated_at)}</p>
+            <p class="text-xs text-muted">Updated {formatDate(team.updated_at)}</p>
           </div>
         </a>
       {/each}

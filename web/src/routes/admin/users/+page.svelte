@@ -110,7 +110,7 @@
       <h1 class="text-2xl font-bold">User admin</h1>
       <p class="text-sm text-muted" style="margin-top:2px;">Super admin only — add users and reset passwords.</p>
     </div>
-    <button class="btn btn-secondary btn-sm" onclick={() => goto('/')}>← All Plans</button>
+    <button class="btn btn-secondary btn-sm" onclick={() => goto('/')}>← All Teams</button>
   </div>
 
   {#if $user && $user.role !== 'admin'}

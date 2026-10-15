@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-type Plan struct {
+type Team struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
@@ -23,9 +23,12 @@ type Plan struct {
 	JiraInsecure bool   `json:"jira_insecure"`
 }
 
+// Plan is a deprecated alias for Team, kept for backward compatibility.
+type Plan = Team
+
 type JiraSnapshot struct {
 	ID             string                `json:"id"`
-	PlanID         string                `json:"plan_id"`
+	TeamID         string                `json:"team_id"`
 	Name           string                `json:"name"`
 	StartDate      string                `json:"start_date"` // YYYY-MM-DD
 	EndDate        string                `json:"end_date"`   // YYYY-MM-DD
@@ -116,7 +119,7 @@ type Session struct {
 
 type CapacityPlan struct {
 	ID               string       `json:"id"`
-	PlanID           string       `json:"plan_id"`
+	TeamID           string       `json:"team_id"`
 	Name             string       `json:"name"`
 	Status           string       `json:"status"` // draft | active | archived
 	HoursPerSP       float64      `json:"hours_per_sp"`
@@ -174,7 +177,7 @@ type CapacitySummary struct {
 
 type Presentation struct {
 	ID         string    `json:"id"`
-	PlanID     string    `json:"plan_id"`
+	TeamID     string    `json:"team_id"`
 	Type       string    `json:"type"` // intro | retro
 	TemplateID string    `json:"template_id"` // default | minimalist
 	Title      string    `json:"title"`

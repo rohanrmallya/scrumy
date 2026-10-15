@@ -4,12 +4,12 @@
   import { goto } from '$app/navigation';
   import { api, type CapacityPlan, type TeamMember, type Sprint, type CapacitySummary } from '$lib/api';
 
-  const planID = $derived($page.params.id);
+  const teamID = $derived($page.params.id);
   const cpID = $derived($page.params.cpid);
   const isNew = $derived(cpID === 'new');
 
   let cp = $state<CapacityPlan>({
-    id: '', plan_id: planID, name: '', status: 'draft',
+    id: '', team_id: teamID, name: '', status: 'draft',
     hours_per_sp: 8, productive_hours: 6, loading_factor: 0.75,
     created_at: '', updated_at: '', members: [], sprints: []
   });
@@ -35,7 +35,7 @@
   onMount(async () => {
     if (!isNew) {
       try {
-        cp = await api.capacity.get(planID, cpID);
+        cp = await api.capacity.get(teamID, cpID);
         // Expand first sprint by default
         if (cp.sprints?.length) expandedSprints = new Set([cp.sprints[0].id]);
         await refreshSummary();
@@ -48,14 +48,14 @@
     if (isNew || !cp.id) return;
     summaryLoading = true;
     try {
-      summary = await api.capacity.summary(planID, cp.id);
+      summary = await api.capacity.summary(teamID, cp.id);
     } catch {}
     finally { summaryLoading = false; }
   }
 
   async function saveVelocity() {
     if (!cp.id) return;
-    await api.capacity.update(planID, cp.id, {
+    await api.capacity.update(teamID, cp.id, {
       name: cp.name, status: cp.status,
       hours_per_sp: cp.hours_per_sp,
       productive_hours: cp.productive_hours,
@@ -68,16 +68,16 @@
     saving = true;
     try {
       if (isNew) {
-        const created = await api.capacity.create(planID, {
+        const created = await api.capacity.create(teamID, {
           name: cp.name || 'New Capacity Plan',
           hours_per_sp: cp.hours_per_sp,
           productive_hours: cp.productive_hours,
           loading_factor: cp.loading_factor
         });
-        goto(`/plans/${planID}/capacity/${created.id}`);
+        goto(`/teams/${teamID}/capacity/${created.id}`);
       } else {
-        await api.capacity.update(planID, cp.id, { ...cp, status: 'active' });
-        goto(`/plans/${planID}`);
+        await api.capacity.update(teamID, cp.id, { ...cp, status: 'active' });
+        goto(`/teams/${teamID}`);
       }
     } catch (e: any) {
       error = e.message;
@@ -87,9 +87,9 @@
   }
 
   async function addMember() {
-    console.log("Adding member: ", planID, cp.id, newMemberName, newMemberRole, newMemberUtil);
+    console.log("Adding member: ", teamID, cp.id, newMemberName, newMemberRole, newMemberUtil);
     if (!newMemberName.trim() || !cp.id) return;
-    cp = await api.capacity.addMember(planID, cp.id, {
+    cp = await api.capacity.addMember(teamID, cp.id, {
       name: newMemberName.trim(), role: newMemberRole.trim(), utilization_pct: newMemberUtil
     });
     newMemberName = ''; newMemberRole = ''; newMemberUtil = 100;
@@ -99,19 +99,19 @@
 
   async function updateMemberUtil(m: TeamMember, val: number) {
     m.utilization_pct = val;
-    await api.capacity.updateMember(planID, cp.id, m.id, m);
+    await api.capacity.updateMember(teamID, cp.id, m.id, m);
     await refreshSummary();
   }
 
   async function deleteMember(mID: string) {
-    cp = await api.capacity.deleteMember(planID, cp.id, mID) as CapacityPlan;
+    cp = await api.capacity.deleteMember(teamID, cp.id, mID) as CapacityPlan;
     await refreshSummary();
   }
 
   async function addSprint() {
-    console.log("Adding sprint: ", planID, cp.id, newSprintName, newSprintStart, newSprintEnd);
+    console.log("Adding sprint: ", teamID, cp.id, newSprintName, newSprintStart, newSprintEnd);
     if (!newSprintStart || !newSprintEnd || !cp.id) return;
-    cp = await api.capacity.addSprint(planID, cp.id, {
+    cp = await api.capacity.addSprint(teamID, cp.id, {
       name: newSprintName || undefined,
       start_date: newSprintStart, end_date: newSprintEnd
     });
@@ -123,12 +123,12 @@
   }
 
   async function deleteSprint(sID: string) {
-    cp = await api.capacity.deleteSprint(planID, cp.id, sID) as CapacityPlan;
+    cp = await api.capacity.deleteSprint(teamID, cp.id, sID) as CapacityPlan;
     await refreshSummary();
   }
 
   async function upsertLeave(sID: string, mID: string, val: number) {
-    await api.capacity.upsertLeave(planID, cp.id, sID, mID, val);
+    await api.capacity.upsertLeave(teamID, cp.id, sID, mID, val);
     await refreshSummary();
   }
 
@@ -146,11 +146,11 @@
     if (!cp.name.trim()) { error = 'Plan name is required'; return; }
     saving = true;
     try {
-      const created = await api.capacity.create(planID, {
+      const created = await api.capacity.create(teamID, {
         name: cp.name, hours_per_sp: cp.hours_per_sp,
         productive_hours: cp.productive_hours, loading_factor: cp.loading_factor
       });
-      goto(`/plans/${planID}/capacity/${created.id}`);
+      goto(`/teams/${teamID}/capacity/${created.id}`);
     } catch (e: any) {
       error = e.message;
     } finally { saving = false; }
@@ -164,18 +164,18 @@
 <!-- Top bar -->
 <div style="background:var(--c-surface);border-bottom:1px solid var(--c-border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:56px;z-index:99;">
   <div class="flex items-center gap-3">
-    <a href="/plans/{planID}" class="btn-icon" style="font-size:18px;" title="Back">←</a>
+    <a href="/teams/{teamID}" class="btn-icon" style="font-size:18px;" title="Back">←</a>
     <h1 class="font-semibold" style="font-size:16px;">{isNew ? 'New Capacity Plan' : cp.name}</h1>
   </div>
   <div class="flex gap-2">
-    <a href="/plans/{planID}" class="btn btn-secondary">Cancel</a>
+    <a href="/teams/{teamID}" class="btn btn-secondary">Cancel</a>
     {#if isNew}
       <button type="button" class="btn btn-primary" onclick={createAndContinue} disabled={saving || !cp.name.trim()}>
         {saving ? 'Creating…' : 'Continue →'}
       </button>
     {:else}
       <button type="button" class="btn btn-primary" onclick={finalize} disabled={saving}>
-        <span>✓</span> {saving ? 'Saving…' : 'Finalize Plan'}
+        <span>✓</span> {saving ? 'Saving…' : 'Finalize Capacity Plan'}
       </button>
     {/if}
   </div>
@@ -188,13 +188,13 @@
 <div style="max-width:1100px;margin:0 auto;padding:24px 24px 80px;display:flex;flex-direction:column;gap:20px;">
 
   {#if isNew}
-    <!-- Name + Velocity for new plans -->
+    <!-- Name + Velocity for new teams -->
     <div class="card">
-      <div class="card-header"><h2 class="font-semibold">Plan Details</h2></div>
+      <div class="card-header"><h2 class="font-semibold">Capacity Plan Details</h2></div>
       <div class="card-body" style="display:flex;flex-direction:column;gap:16px;">
         <div class="form-group">
-          <label class="label" for="plan-name">Plan Name</label>
-          <input id="plan-name" class="input" bind:value={cp.name} placeholder="e.g. Mid-Quarter Revision" />
+          <label class="label" for="team-name">Capacity Plan Name</label>
+          <input id="team-name" class="input" bind:value={cp.name} placeholder="e.g. Mid-Quarter Revision" />
         </div>
         <div class="grid-3">
           <div class="form-group">

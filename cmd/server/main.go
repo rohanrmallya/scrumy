@@ -50,10 +50,61 @@ func main() {
 	// ── API routes ───────────────────────────────────────────────────────────
 	authH := &handlers.AuthHandler{DB: database}
 	usersH := &handlers.UsersHandler{DB: database, Auth: authH}
-	plansH := &handlers.PlansHandler{DB: database, Auth: authH}
+	teamsH := &handlers.TeamsHandler{DB: database, Auth: authH}
 	capacityH := &handlers.CapacityHandler{DB: database, Auth: authH}
 	presH := &handlers.PresentationsHandler{DB: database, Auth: authH}
 	jiraH := &handlers.JiraHandler{DB: database, Auth: authH}
+
+	registerTeamRoutes := func(prefix string) {
+		// Teams
+		r.Get(prefix, teamsH.List)
+		r.Post(prefix, teamsH.Create)
+		r.Get(prefix+"/{teamID}", teamsH.Get)
+		r.Put(prefix+"/{teamID}", teamsH.Update)
+		r.Delete(prefix+"/{teamID}", teamsH.Delete)
+		r.Post(prefix+"/{teamID}/admins", teamsH.AddAdmin)
+		r.Delete(prefix+"/{teamID}/admins", teamsH.RemoveAdmin)
+
+		// Jira Integration
+		r.Put(prefix+"/{teamID}/jira/settings", jiraH.UpdateSettings)
+		r.Post(prefix+"/{teamID}/jira/test-connection", jiraH.TestConnection)
+		r.Post(prefix+"/{teamID}/jira/snapshots", jiraH.CreateSnapshot)
+		r.Get(prefix+"/{teamID}/jira/snapshots", jiraH.ListSnapshots)
+		r.Get(prefix+"/{teamID}/jira/snapshots/{snapshotID}", jiraH.GetSnapshot)
+		r.Put(prefix+"/{teamID}/jira/snapshots/{snapshotID}", jiraH.UpdateSnapshot)
+		r.Post(prefix+"/{teamID}/jira/snapshots/{snapshotID}/refresh", jiraH.RefreshSnapshot)
+		r.Delete(prefix+"/{teamID}/jira/snapshots/{snapshotID}", jiraH.DeleteSnapshot)
+		r.Post(prefix+"/{teamID}/jira/snapshots/{snapshotID}/issues/{issueKey}/toggle-planned", jiraH.ToggleIssuePlanned)
+
+		// Capacity Plans
+		r.Get(prefix+"/{teamID}/capacity", capacityH.List)
+		r.Post(prefix+"/{teamID}/capacity", capacityH.Create)
+		r.Get(prefix+"/{teamID}/capacity/{cpID}", capacityH.Get)
+		r.Put(prefix+"/{teamID}/capacity/{cpID}", capacityH.Update)
+		r.Delete(prefix+"/{teamID}/capacity/{cpID}", capacityH.Delete)
+		r.Get(prefix+"/{teamID}/capacity/{cpID}/summary", capacityH.Summary)
+
+		// Members
+		r.Post(prefix+"/{teamID}/capacity/{cpID}/members", capacityH.AddMember)
+		r.Put(prefix+"/{teamID}/capacity/{cpID}/members/{memberID}", capacityH.UpdateMember)
+		r.Delete(prefix+"/{teamID}/capacity/{cpID}/members/{memberID}", capacityH.DeleteMember)
+
+		// Sprints
+		r.Post(prefix+"/{teamID}/capacity/{cpID}/sprints", capacityH.AddSprint)
+		r.Put(prefix+"/{teamID}/capacity/{cpID}/sprints/{sprintID}", capacityH.UpdateSprint)
+		r.Delete(prefix+"/{teamID}/capacity/{cpID}/sprints/{sprintID}", capacityH.DeleteSprint)
+		r.Post(prefix+"/{teamID}/capacity/{cpID}/sprints/{sprintID}/leaves", capacityH.UpsertLeave)
+
+		// Presentations
+		r.Get(prefix+"/{teamID}/presentations", presH.List)
+		r.Post(prefix+"/{teamID}/presentations", presH.Create)
+		r.Get(prefix+"/{teamID}/presentations/{presID}", presH.Get)
+		r.Put(prefix+"/{teamID}/presentations/{presID}", presH.Update)
+		r.Delete(prefix+"/{teamID}/presentations/{presID}", presH.Delete)
+		r.Post(prefix+"/{teamID}/presentations/{presID}/publish", presH.Publish)
+		r.Post(prefix+"/{teamID}/presentations/{presID}/unpublish", presH.Unpublish)
+		r.Post(prefix+"/{teamID}/presentations/{presID}/feedback", presH.AddRetroFeedback)
+	}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(authH.Middleware)
@@ -73,54 +124,9 @@ func main() {
 		r.Put("/users/{userID}/password", usersH.ResetPassword)
 		r.Delete("/users/{userID}", usersH.Delete)
 
-		// Plans
-		r.Get("/plans", plansH.List)
-		r.Post("/plans", plansH.Create)
-		r.Get("/plans/{planID}", plansH.Get)
-		r.Put("/plans/{planID}", plansH.Update)
-		r.Delete("/plans/{planID}", plansH.Delete)
-		r.Post("/plans/{planID}/admins", plansH.AddAdmin)
-		r.Delete("/plans/{planID}/admins", plansH.RemoveAdmin)
-
-		// Jira Integration
-		r.Put("/plans/{planID}/jira/settings", jiraH.UpdateSettings)
-		r.Post("/plans/{planID}/jira/test-connection", jiraH.TestConnection)
-		r.Post("/plans/{planID}/jira/snapshots", jiraH.CreateSnapshot)
-		r.Get("/plans/{planID}/jira/snapshots", jiraH.ListSnapshots)
-		r.Get("/plans/{planID}/jira/snapshots/{snapshotID}", jiraH.GetSnapshot)
-		r.Put("/plans/{planID}/jira/snapshots/{snapshotID}", jiraH.UpdateSnapshot)
-		r.Post("/plans/{planID}/jira/snapshots/{snapshotID}/refresh", jiraH.RefreshSnapshot)
-		r.Delete("/plans/{planID}/jira/snapshots/{snapshotID}", jiraH.DeleteSnapshot)
-		r.Post("/plans/{planID}/jira/snapshots/{snapshotID}/issues/{issueKey}/toggle-planned", jiraH.ToggleIssuePlanned)
-
-		// Capacity Plans
-		r.Get("/plans/{planID}/capacity", capacityH.List)
-		r.Post("/plans/{planID}/capacity", capacityH.Create)
-		r.Get("/plans/{planID}/capacity/{cpID}", capacityH.Get)
-		r.Put("/plans/{planID}/capacity/{cpID}", capacityH.Update)
-		r.Delete("/plans/{planID}/capacity/{cpID}", capacityH.Delete)
-		r.Get("/plans/{planID}/capacity/{cpID}/summary", capacityH.Summary)
-
-		// Members
-		r.Post("/plans/{planID}/capacity/{cpID}/members", capacityH.AddMember)
-		r.Put("/plans/{planID}/capacity/{cpID}/members/{memberID}", capacityH.UpdateMember)
-		r.Delete("/plans/{planID}/capacity/{cpID}/members/{memberID}", capacityH.DeleteMember)
-
-		// Sprints
-		r.Post("/plans/{planID}/capacity/{cpID}/sprints", capacityH.AddSprint)
-		r.Put("/plans/{planID}/capacity/{cpID}/sprints/{sprintID}", capacityH.UpdateSprint)
-		r.Delete("/plans/{planID}/capacity/{cpID}/sprints/{sprintID}", capacityH.DeleteSprint)
-		r.Post("/plans/{planID}/capacity/{cpID}/sprints/{sprintID}/leaves", capacityH.UpsertLeave)
-
-		// Presentations
-		r.Get("/plans/{planID}/presentations", presH.List)
-		r.Post("/plans/{planID}/presentations", presH.Create)
-		r.Get("/plans/{planID}/presentations/{presID}", presH.Get)
-		r.Put("/plans/{planID}/presentations/{presID}", presH.Update)
-		r.Delete("/plans/{planID}/presentations/{presID}", presH.Delete)
-		r.Post("/plans/{planID}/presentations/{presID}/publish", presH.Publish)
-		r.Post("/plans/{planID}/presentations/{presID}/unpublish", presH.Unpublish)
-		r.Post("/plans/{planID}/presentations/{presID}/feedback", presH.AddRetroFeedback)
+		// Teams (current) + deprecated /plans aliases for backward compatibility
+		registerTeamRoutes("/teams")
+		registerTeamRoutes("/plans")
 	})
 
 	// ── Static frontend ──────────────────────────────────────────────────────
@@ -131,6 +137,18 @@ func main() {
 
 	r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
 		urlPath := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		// Deprecated /plans/* page URLs redirect to their /teams/* equivalents.
+		// (/plans alone has no counterpart, so it goes home.)
+		if urlPath == "plans" || strings.HasPrefix(urlPath, "plans/") {
+			rest := strings.TrimPrefix(urlPath, "plans")
+			rest = strings.TrimPrefix(rest, "/")
+			target := "/"
+			if rest != "" {
+				target = "/teams/" + rest
+			}
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
+			return
+		}
 		if urlPath == "" || urlPath == "." {
 			urlPath = "index.html"
 		}

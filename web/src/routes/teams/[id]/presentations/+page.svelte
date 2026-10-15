@@ -1,11 +1,11 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
-  import { api, type Presentation, type Plan } from '$lib/api';
+  import { api, type Presentation, type Team } from '$lib/api';
 
-  const planID = $derived($page.params.id as string);
+  const teamID = $derived($page.params.id as string);
 
-  let plan = $state<Plan | null>(null);
+  let team = $state<Team | null>(null);
   let presentations = $state<Presentation[]>([]);
   let loading = $state(true);
   let error = $state('');
@@ -20,10 +20,10 @@
     error = '';
     try {
       const [p, pr] = await Promise.all([
-        api.plans.get(planID),
-        api.presentations.list(planID)
+        api.teams.get(teamID),
+        api.presentations.list(teamID)
       ]);
-      plan = p;
+      team = p;
       presentations = pr;
     } catch (e: any) {
       error = e.message;
@@ -56,7 +56,7 @@
   async function deletePres(presID: string) {
     if (!confirm('Are you sure you want to delete this presentation?')) return;
     try {
-      await api.presentations.delete(planID, presID);
+      await api.presentations.delete(teamID, presID);
       presentations = presentations.filter(p => p.id !== presID);
     } catch (e: any) {
       alert(`Failed to delete presentation: ${e.message}`);
@@ -90,8 +90,8 @@
 <div class="page-content fade-in">
   <!-- Back Link -->
   <div style="margin-bottom: 20px;">
-    <a href="/plans/{planID}" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:6px;">
-      ← Back to Plan Workspace
+    <a href="/teams/{teamID}" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:6px;">
+      ← Back to Team Workspace
     </a>
   </div>
 
@@ -104,19 +104,19 @@
     <div class="badge badge-danger" style="padding:12px 20px; border-radius:8px; font-size:14px; text-transform:none; letter-spacing:0; font-weight:400;">
       ⚠️ {error}
     </div>
-  {:else if plan}
+  {:else if team}
     <!-- Title & Description -->
     <div style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
       <div>
         <h1 class="text-2xl font-bold">🎤 Presentations</h1>
         <p class="text-sm text-muted" style="margin-top: 4px;">
-          Browse, filter, and view presentations created for <strong>{plan.name}</strong>.
+          Browse, filter, and view presentations created for <strong>{team.name}</strong>.
         </p>
       </div>
-      {#if plan.is_admin}
+      {#if team.is_admin}
         <div class="flex gap-2">
-          <a href="/plans/{planID}/presentations/new?type=intro" class="btn btn-secondary btn-sm">+ Intro</a>
-          <a href="/plans/{planID}/presentations/new?type=retro" class="btn btn-secondary btn-sm">+ Retro</a>
+          <a href="/teams/{teamID}/presentations/new?type=intro" class="btn btn-secondary btn-sm">+ Intro</a>
+          <a href="/teams/{teamID}/presentations/new?type=retro" class="btn btn-secondary btn-sm">+ Retro</a>
         </div>
       {/if}
     </div>
@@ -196,7 +196,7 @@
                 <!-- Type icon and play trigger -->
                 {#if pres.status === 'published'}
                   <a
-                    href="/plans/{planID}/presentations/{pres.id}/view"
+                    href="/teams/{teamID}/presentations/{pres.id}/view"
                     style="width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:bold; transition:transform 100ms ease;"
                     class="play-btn {pres.type === 'intro' ? 'intro-play' : 'retro-play'}"
                     title="Play Presentation"
@@ -234,12 +234,12 @@
 
               <div class="flex gap-2">
                 {#if pres.status === 'published'}
-                  <a href="/plans/{planID}/presentations/{pres.id}/view" class="btn btn-secondary btn-sm">
+                  <a href="/teams/{teamID}/presentations/{pres.id}/view" class="btn btn-secondary btn-sm">
                     View
                   </a>
                 {/if}
-                {#if plan.is_admin}
-                  <a href="/plans/{planID}/presentations/{pres.id}/edit" class="btn btn-secondary btn-sm">
+                {#if team.is_admin}
+                  <a href="/teams/{teamID}/presentations/{pres.id}/edit" class="btn btn-secondary btn-sm">
                     Edit
                   </a>
                   <button

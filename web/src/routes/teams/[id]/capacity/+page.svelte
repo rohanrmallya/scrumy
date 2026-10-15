@@ -1,11 +1,11 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
-  import { api, type CapacityPlan, type Plan } from '$lib/api';
+  import { api, type CapacityPlan, type Team } from '$lib/api';
 
-  const planID = $derived($page.params.id as string);
+  const teamID = $derived($page.params.id as string);
 
-  let plan = $state<Plan | null>(null);
+  let team = $state<Team | null>(null);
   let capacityPlans = $state<CapacityPlan[]>([]);
   let loading = $state(true);
   let error = $state('');
@@ -19,10 +19,10 @@
     error = '';
     try {
       const [p, c] = await Promise.all([
-        api.plans.get(planID),
-        api.capacity.list(planID)
+        api.teams.get(teamID),
+        api.capacity.list(teamID)
       ]);
-      plan = p;
+      team = p;
       capacityPlans = c;
     } catch (e: any) {
       error = e.message;
@@ -33,7 +33,7 @@
 
   onMount(loadData);
 
-  // Derived filtered capacity plans
+  // Derived filtered capacity teams
   const filteredPlans = $derived.by(() => {
     return capacityPlans.filter(cp => {
       if (searchQuery.trim()) {
@@ -48,12 +48,12 @@
   });
 
   async function deleteCapacity(cpID: string) {
-    if (!confirm('Are you sure you want to delete this capacity plan?')) return;
+    if (!confirm('Are you sure you want to delete this capacity team?')) return;
     try {
-      await api.capacity.delete(planID, cpID);
+      await api.capacity.delete(teamID, cpID);
       capacityPlans = capacityPlans.filter(cp => cp.id !== cpID);
     } catch (e: any) {
-      alert(`Failed to delete capacity plan: ${e.message}`);
+      alert(`Failed to delete capacity team: ${e.message}`);
     }
   }
 
@@ -89,31 +89,31 @@
 <div class="page-content fade-in">
   <!-- Back Link -->
   <div style="margin-bottom: 20px;">
-    <a href="/plans/{planID}" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:6px;">
-      ← Back to Plan Workspace
+    <a href="/teams/{teamID}" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:6px;">
+      ← Back to Team Workspace
     </a>
   </div>
 
   {#if loading}
     <div class="flex items-center gap-3" style="padding:40px 0">
       <span class="spinner"></span>
-      <span class="text-muted">Loading capacity plans…</span>
+      <span class="text-muted">Loading capacity teams…</span>
     </div>
   {:else if error}
     <div class="badge badge-danger" style="padding:12px 20px; border-radius:8px; font-size:14px; text-transform:none; letter-spacing:0; font-weight:400;">
       ⚠️ {error}
     </div>
-  {:else if plan}
+  {:else if team}
     <!-- Title & Description -->
     <div style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
       <div>
         <h1 class="text-2xl font-bold">📊 Capacity Plans</h1>
         <p class="text-sm text-muted" style="margin-top: 4px;">
-          Browse, filter, and manage all capacity plans created for <strong>{plan.name}</strong>.
+          Browse, filter, and manage all capacity teams created for <strong>{team.name}</strong>.
         </p>
       </div>
-      {#if plan.is_admin}
-        <a href="/plans/{planID}/capacity/new" class="btn btn-primary btn-sm">
+      {#if team.is_admin}
+        <a href="/teams/{teamID}/capacity/new" class="btn btn-primary btn-sm">
           + Create New Plan
         </a>
       {/if}
@@ -168,7 +168,7 @@
       <div>
         {#if filteredPlans.length === 0}
           <div class="empty-state" style="padding: 40px; text-align: center;">
-            <p style="font-size: 15px; color: var(--c-text-2);">No capacity plans match your filter criteria.</p>
+            <p style="font-size: 15px; color: var(--c-text-2);">No capacity teams match your filter criteria.</p>
             {#if searchQuery || statusFilter}
               <button class="btn btn-secondary btn-sm" onclick={clearFilters} style="margin-top: 12px;">
                 Reset Filters
@@ -184,7 +184,7 @@
             >
               <div style="flex: 1; min-width: 0; margin-right: 16px;">
                 <a
-                  href="/plans/{planID}/capacity/{cp.id}"
+                  href="/teams/{teamID}/capacity/{cp.id}"
                   style="display: inline-block; font-weight: 600; font-size: 15px; color: var(--c-primary); text-decoration: none; margin-bottom: 4px;"
                   class="hover-underline"
                 >
@@ -198,10 +198,10 @@
               </div>
 
               <div class="flex gap-2">
-                <a href="/plans/{planID}/capacity/{cp.id}" class="btn btn-secondary btn-sm">
+                <a href="/teams/{teamID}/capacity/{cp.id}" class="btn btn-secondary btn-sm">
                   View Details
                 </a>
-                {#if plan.is_admin}
+                {#if team.is_admin}
                   <button
                     class="btn btn-danger btn-sm btn-icon"
                     style="color: var(--c-danger); width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center;"

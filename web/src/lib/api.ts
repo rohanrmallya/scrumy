@@ -44,7 +44,7 @@ export interface AuthRequest {
 	password?: string;
 }
 
-export interface Plan {
+export interface Team {
 	id: string;
 	name: string;
 	created_at: string;
@@ -61,9 +61,12 @@ export interface Plan {
 	jira_insecure?: boolean;
 }
 
+// Plan is a deprecated alias for Team, kept for backward compatibility.
+export type Plan = Team;
+
 export interface CapacityPlan {
 	id: string;
-	plan_id: string;
+	team_id: string;
 	name: string;
 	status: string;
 	hours_per_sp: number;
@@ -120,7 +123,7 @@ export interface CapacitySummary {
 
 export interface Presentation {
 	id: string;
-	plan_id: string;
+	team_id: string;
 	type: 'intro' | 'retro';
 	template_id: string;
 	title: string;
@@ -250,7 +253,7 @@ export interface JiraSnapshotRefresh {
 
 export interface JiraSnapshot {
 	id: string;
-	plan_id: string;
+	team_id: string;
 	name: string;
 	start_date: string;
 	end_date: string;
@@ -272,52 +275,52 @@ export interface JiraSettings {
 
 // ─── API calls ────────────────────────────────────────────────────────────────
 export const api = {
-	plans: {
-		list: () => get<Plan[]>('/plans'),
-		create: (name: string) => post<Plan>('/plans', { name }),
-		get: (id: string) => get<Plan>(`/plans/${id}`),
-		update: (id: string, name: string) => put<Plan>(`/plans/${id}`, { name }),
-		delete: (id: string) => del<{ deleted: boolean }>(`/plans/${id}`),
-		addAdmin: (id: string, username: string) => post<{ added: boolean }>(`/plans/${id}/admins`, { username }),
-		removeAdmin: (id: string, username: string) => del<{ removed: boolean }>(`/plans/${id}/admins`, { username }),
+	teams: {
+		list: () => get<Team[]>('/teams'),
+		create: (name: string) => post<Team>('/teams', { name }),
+		get: (id: string) => get<Team>(`/teams/${id}`),
+		update: (id: string, name: string) => put<Team>(`/teams/${id}`, { name }),
+		delete: (id: string) => del<{ deleted: boolean }>(`/teams/${id}`),
+		addAdmin: (id: string, username: string) => post<{ added: boolean }>(`/teams/${id}/admins`, { username }),
+		removeAdmin: (id: string, username: string) => del<{ removed: boolean }>(`/teams/${id}/admins`, { username }),
 	},
 	capacity: {
-		list: (planID: string) => get<CapacityPlan[]>(`/plans/${planID}/capacity`),
-		create: (planID: string, body: Partial<CapacityPlan>) => post<CapacityPlan>(`/plans/${planID}/capacity`, body),
-		get: (planID: string, cpID: string) => get<CapacityPlan>(`/plans/${planID}/capacity/${cpID}`),
-		update: (planID: string, cpID: string, body: Partial<CapacityPlan>) => put<CapacityPlan>(`/plans/${planID}/capacity/${cpID}`, body),
-		delete: (planID: string, cpID: string) => del<{ deleted: boolean }>(`/plans/${planID}/capacity/${cpID}`),
-		summary: (planID: string, cpID: string) => get<CapacitySummary>(`/plans/${planID}/capacity/${cpID}/summary`),
-		addMember: (planID: string, cpID: string, body: Partial<TeamMember>) => post<CapacityPlan>(`/plans/${planID}/capacity/${cpID}/members`, body),
-		updateMember: (planID: string, cpID: string, mID: string, body: Partial<TeamMember>) => put<CapacityPlan>(`/plans/${planID}/capacity/${cpID}/members/${mID}`, body),
-		deleteMember: (planID: string, cpID: string, mID: string) => del<CapacityPlan>(`/plans/${planID}/capacity/${cpID}/members/${mID}`),
-		addSprint: (planID: string, cpID: string, body: Partial<Sprint>) => post<CapacityPlan>(`/plans/${planID}/capacity/${cpID}/sprints`, body),
-		updateSprint: (planID: string, cpID: string, sID: string, body: Partial<Sprint>) => put<CapacityPlan>(`/plans/${planID}/capacity/${cpID}/sprints/${sID}`, body),
-		deleteSprint: (planID: string, cpID: string, sID: string) => del<CapacityPlan>(`/plans/${planID}/capacity/${cpID}/sprints/${sID}`),
-		upsertLeave: (planID: string, cpID: string, sID: string, member_id: string, leaves: number) =>
-			post<CapacityPlan>(`/plans/${planID}/capacity/${cpID}/sprints/${sID}/leaves`, { member_id, leaves }),
+		list: (teamID: string) => get<CapacityPlan[]>(`/teams/${teamID}/capacity`),
+		create: (teamID: string, body: Partial<CapacityPlan>) => post<CapacityPlan>(`/teams/${teamID}/capacity`, body),
+		get: (teamID: string, cpID: string) => get<CapacityPlan>(`/teams/${teamID}/capacity/${cpID}`),
+		update: (teamID: string, cpID: string, body: Partial<CapacityPlan>) => put<CapacityPlan>(`/teams/${teamID}/capacity/${cpID}`, body),
+		delete: (teamID: string, cpID: string) => del<{ deleted: boolean }>(`/teams/${teamID}/capacity/${cpID}`),
+		summary: (teamID: string, cpID: string) => get<CapacitySummary>(`/teams/${teamID}/capacity/${cpID}/summary`),
+		addMember: (teamID: string, cpID: string, body: Partial<TeamMember>) => post<CapacityPlan>(`/teams/${teamID}/capacity/${cpID}/members`, body),
+		updateMember: (teamID: string, cpID: string, mID: string, body: Partial<TeamMember>) => put<CapacityPlan>(`/teams/${teamID}/capacity/${cpID}/members/${mID}`, body),
+		deleteMember: (teamID: string, cpID: string, mID: string) => del<CapacityPlan>(`/teams/${teamID}/capacity/${cpID}/members/${mID}`),
+		addSprint: (teamID: string, cpID: string, body: Partial<Sprint>) => post<CapacityPlan>(`/teams/${teamID}/capacity/${cpID}/sprints`, body),
+		updateSprint: (teamID: string, cpID: string, sID: string, body: Partial<Sprint>) => put<CapacityPlan>(`/teams/${teamID}/capacity/${cpID}/sprints/${sID}`, body),
+		deleteSprint: (teamID: string, cpID: string, sID: string) => del<CapacityPlan>(`/teams/${teamID}/capacity/${cpID}/sprints/${sID}`),
+		upsertLeave: (teamID: string, cpID: string, sID: string, member_id: string, leaves: number) =>
+			post<CapacityPlan>(`/teams/${teamID}/capacity/${cpID}/sprints/${sID}/leaves`, { member_id, leaves }),
 	},
 	presentations: {
-		list: (planID: string) => get<Presentation[]>(`/plans/${planID}/presentations`),
-		create: (planID: string, body: { type: string; template_id: string; title: string; sprint_name: string }) => post<Presentation>(`/plans/${planID}/presentations`, body),
-		get: (planID: string, presID: string) => get<Presentation>(`/plans/${planID}/presentations/${presID}`),
-		update: (planID: string, presID: string, body: Partial<Presentation> & { content?: unknown }) => put<Presentation>(`/plans/${planID}/presentations/${presID}`, body),
-		delete: (planID: string, presID: string) => del<{ deleted: boolean }>(`/plans/${planID}/presentations/${presID}`),
-		publish: (planID: string, presID: string) => post<Presentation>(`/plans/${planID}/presentations/${presID}/publish`),
-		unpublish: (planID: string, presID: string) => post<Presentation>(`/plans/${planID}/presentations/${presID}/unpublish`),
-		addFeedback: (planID: string, presID: string, item: string) => post<Presentation>(`/plans/${planID}/presentations/${presID}/feedback`, { item }),
+		list: (teamID: string) => get<Presentation[]>(`/teams/${teamID}/presentations`),
+		create: (teamID: string, body: { type: string; template_id: string; title: string; sprint_name: string }) => post<Presentation>(`/teams/${teamID}/presentations`, body),
+		get: (teamID: string, presID: string) => get<Presentation>(`/teams/${teamID}/presentations/${presID}`),
+		update: (teamID: string, presID: string, body: Partial<Presentation> & { content?: unknown }) => put<Presentation>(`/teams/${teamID}/presentations/${presID}`, body),
+		delete: (teamID: string, presID: string) => del<{ deleted: boolean }>(`/teams/${teamID}/presentations/${presID}`),
+		publish: (teamID: string, presID: string) => post<Presentation>(`/teams/${teamID}/presentations/${presID}/publish`),
+		unpublish: (teamID: string, presID: string) => post<Presentation>(`/teams/${teamID}/presentations/${presID}/unpublish`),
+		addFeedback: (teamID: string, presID: string, item: string) => post<Presentation>(`/teams/${teamID}/presentations/${presID}/feedback`, { item }),
 	},
 	jira: {
-		saveSettings: (planID: string, settings: JiraSettings) => put<{ updated: boolean }>(`/plans/${planID}/jira/settings`, settings),
-		testConnection: (planID: string, settings: Partial<JiraSettings>) => post<{ ok: boolean }>(`/plans/${planID}/jira/test-connection`, settings),
-		createSnapshot: (planID: string, body: { name: string; start_date: string; end_date: string; all_worklogs: boolean }) => post<JiraSnapshot>(`/plans/${planID}/jira/snapshots`, body),
-		listSnapshots: (planID: string) => get<JiraSnapshot[]>(`/plans/${planID}/jira/snapshots`),
-		getSnapshot: (planID: string, id: string) => get<JiraSnapshot>(`/plans/${planID}/jira/snapshots/${id}`),
-		updateSnapshot: (planID: string, id: string, body: { name: string; start_date: string; end_date: string }) => put<JiraSnapshot>(`/plans/${planID}/jira/snapshots/${id}`, body),
-		refreshSnapshot: (planID: string, id: string) => post<JiraSnapshot>(`/plans/${planID}/jira/snapshots/${id}/refresh`),
-		deleteSnapshot: (planID: string, id: string) => del<{ deleted: boolean }>(`/plans/${planID}/jira/snapshots/${id}`),
-		toggleIssuePlanned: (planID: string, snapshotID: string, issueKey: string, is_unplanned?: boolean) =>
-			post<JiraSnapshot>(`/plans/${planID}/jira/snapshots/${snapshotID}/issues/${issueKey}/toggle-planned`, { is_unplanned }),
+		saveSettings: (teamID: string, settings: JiraSettings) => put<{ updated: boolean }>(`/teams/${teamID}/jira/settings`, settings),
+		testConnection: (teamID: string, settings: Partial<JiraSettings>) => post<{ ok: boolean }>(`/teams/${teamID}/jira/test-connection`, settings),
+		createSnapshot: (teamID: string, body: { name: string; start_date: string; end_date: string; all_worklogs: boolean }) => post<JiraSnapshot>(`/teams/${teamID}/jira/snapshots`, body),
+		listSnapshots: (teamID: string) => get<JiraSnapshot[]>(`/teams/${teamID}/jira/snapshots`),
+		getSnapshot: (teamID: string, id: string) => get<JiraSnapshot>(`/teams/${teamID}/jira/snapshots/${id}`),
+		updateSnapshot: (teamID: string, id: string, body: { name: string; start_date: string; end_date: string }) => put<JiraSnapshot>(`/teams/${teamID}/jira/snapshots/${id}`, body),
+		refreshSnapshot: (teamID: string, id: string) => post<JiraSnapshot>(`/teams/${teamID}/jira/snapshots/${id}/refresh`),
+		deleteSnapshot: (teamID: string, id: string) => del<{ deleted: boolean }>(`/teams/${teamID}/jira/snapshots/${id}`),
+		toggleIssuePlanned: (teamID: string, snapshotID: string, issueKey: string, is_unplanned?: boolean) =>
+			post<JiraSnapshot>(`/teams/${teamID}/jira/snapshots/${snapshotID}/issues/${issueKey}/toggle-planned`, { is_unplanned }),
 	},
 	auth: {
 		login: (body: AuthRequest) => post<User>('/auth/login', body),
