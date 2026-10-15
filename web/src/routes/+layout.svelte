@@ -26,6 +26,10 @@
     
     {#if $user}
       <span class="navbar-text mr-4">Hi, {$user.username}</span>
+      {#if $user.role === 'admin'}
+        <a href="/admin/users" class="btn btn-ghost btn-sm">Users</a>
+      {/if}
+      <a href="/change-password" class="btn btn-ghost btn-sm">Change password</a>
       <button class="btn btn-ghost btn-sm" onclick={handleLogout}>Logout</button>
     {:else}
       <a href="/login" class="btn btn-ghost btn-sm">Login</a>

@@ -26,6 +26,14 @@ export interface User {
 	created_at: string;
 }
 
+export interface ManagedUser {
+	id: string;
+	username: string;
+	role: string;
+	created_at: string;
+	is_super_admin?: boolean;
+}
+
 export interface AuthRequest {
 	username: string;
 	password?: string;
@@ -311,5 +319,16 @@ export const api = {
 		register: (body: AuthRequest) => post<{ id: string }>('/auth/register', body),
 		logout: () => post<{ message: string }>('/auth/logout'),
 		me: () => get<User>('/auth/me'),
+		changePassword: (body: { current_password: string; new_password: string }) =>
+			post<{ message: string }>('/auth/change-password', body),
+	},
+	users: {
+		list: () => get<ManagedUser[]>('/users'),
+		create: (body: { username: string; password: string; role?: string }) =>
+			post<ManagedUser>('/users', body),
+		updateRole: (id: string, role: string) => put<ManagedUser>(`/users/${id}`, { role }),
+		resetPassword: (id: string, new_password: string) =>
+			put<{ message: string }>(`/users/${id}/password`, { new_password }),
+		delete: (id: string) => del<{ deleted: boolean }>(`/users/${id}`),
 	},
 };

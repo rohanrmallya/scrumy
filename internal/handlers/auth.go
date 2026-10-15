@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"os"
 	"scrumy/internal/db"
 	"scrumy/internal/models"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -180,4 +182,117 @@ func (h *AuthHandler) IsPlanAdmin(userID, planID string) bool {
 	var count int
 	err := h.DB.QueryRow("SELECT COUNT(*) FROM plan_admins WHERE plan_id = ? AND user_id = ?", planID, userID).Scan(&count)
 	return err == nil && count > 0
+}
+
+// ─── Super Admin ─────────────────────────────────────────────────────────────
+// The super admin username is configurable via env (default: "root").
+// Resolution order: SCRUMY_SUPERADMIN_USERNAME > SCRUMY_SUPERADMIN > SUPER_ADMIN_USERNAME.
+
+func SuperAdminUsername() string {
+	for _, key := range []string{"SCRUMY_SUPERADMIN_USERNAME", "SCRUMY_SUPERADMIN", "SUPER_ADMIN_USERNAME"} {
+		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			return v
+		}
+	}
+	return "root"
+}
+
+func SuperAdminInitialPassword() string {
+	if v := os.Getenv("SCRUMY_SUPERADMIN_PASSWORD"); v != "" {
+		return v
+	}
+	return "root"
+}
+
+// IsSuperAdmin reports whether the user is the super admin, either by matching
+// the configured super admin username or by holding the global admin role.
+func IsSuperAdmin(user *models.User) bool {
+	if user == nil {
+		return false
+	}
+	if user.Role == "admin" {
+		return true
+	}
+	return user.Username == SuperAdminUsername()
+}
+
+func (h *AuthHandler) RequireSuperAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := h.GetUserFromContext(r.Context())
+		if user == nil {
+			respondErr(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		if !IsSuperAdmin(user) {
+			respondErr(w, http.StatusForbidden, "super admin required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ChangePassword lets any logged-in user change their own password.
+// Requires the current password to guard against session hijacking.
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	user := h.GetUserFromContext(r.Context())
+	if user == nil {
+		respondErr(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := decode(r, &req); err != nil {
+		respondErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		respondErr(w, http.StatusBadRequest, "current_password and new_password are required")
+		return
+	}
+	if len(req.NewPassword) < 4 {
+		respondErr(w, http.StatusBadRequest, "new password must be at least 4 characters")
+		return
+	}
+	if req.CurrentPassword == req.NewPassword {
+		respondErr(w, http.StatusBadRequest, "new password must differ from current password")
+		return
+	}
+
+	var passwordHash string
+	err := h.DB.QueryRow("SELECT password_hash FROM users WHERE id = ?", user.ID).Scan(&passwordHash)
+	if err == sql.ErrNoRows {
+		respondErr(w, http.StatusUnauthorized, "user not found")
+		return
+	} else if err != nil {
+		respondErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(req.CurrentPassword)); err != nil {
+		respondErr(w, http.StatusUnauthorized, "current password is incorrect")
+		return
+	}
+
+	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "failed to hash password")
+		return
+	}
+
+	if _, err := h.DB.Exec("UPDATE users SET password_hash = ? WHERE id = ?", string(newHash), user.ID); err != nil {
+		respondErr(w, http.StatusInternalServerError, "failed to update password")
+		return
+	}
+
+	// Invalidate all other sessions for this user, keeping the current one alive.
+	if cookie, err := r.Cookie("session_id"); err == nil && cookie.Value != "" {
+		h.DB.Exec("DELETE FROM sessions WHERE user_id = ? AND id != ?", user.ID, cookie.Value)
+	} else {
+		h.DB.Exec("DELETE FROM sessions WHERE user_id = ?", user.ID)
+	}
+
+	respond(w, http.StatusOK, map[string]string{"message": "password changed"})
 }

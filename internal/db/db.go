@@ -8,6 +8,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/bcrypt"
 	"log"
+	"os"
+	"strings"
 )
 
 //go:embed schema.sql
@@ -222,28 +224,58 @@ func (db *DB) getTableColumns(table string) ([]string, error) {
 	return columns, nil
 }
 
+func superAdminUsername() string {
+	for _, key := range []string{"SCRUMY_SUPERADMIN_USERNAME", "SCRUMY_SUPERADMIN", "SUPER_ADMIN_USERNAME"} {
+		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			return v
+		}
+	}
+	return "root"
+}
+
+func superAdminInitialPassword() string {
+	if v := os.Getenv("SCRUMY_SUPERADMIN_PASSWORD"); v != "" {
+		return v
+	}
+	return "root"
+}
+
 func (db *DB) SeedRootUser() error {
+	superAdmin := superAdminUsername()
+	superPassword := superAdminInitialPassword()
+
+	// Ensure the configured super admin exists with the admin role.
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM users WHERE username = 'root'").Scan(&count)
+	err := db.QueryRow("SELECT COUNT(*) FROM users WHERE username = ?", superAdmin).Scan(&count)
 	if err != nil {
 		return err
 	}
-	if count > 0 {
-		return nil
+	var superAdminID string
+	if count == 0 {
+		hash, err := bcrypt.GenerateFromPassword([]byte(superPassword), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+		superAdminID = uuid.New().String()
+		_, err = db.Exec("INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
+			superAdminID, superAdmin, string(hash), "admin")
+		if err != nil {
+			return err
+		}
+		log.Printf("🌱 Seeded super admin user %q\n", superAdmin)
+	} else {
+		// The super admin username already exists: skip creation entirely so
+		// the existing password hash is left untouched, and treat the
+		// existing user as the superuser by ensuring it holds the admin role.
+		if err := db.QueryRow("SELECT id FROM users WHERE username = ?", superAdmin).Scan(&superAdminID); err != nil {
+			return err
+		}
+		if _, err := db.Exec("UPDATE users SET role = 'admin' WHERE username = ? AND role != 'admin'", superAdmin); err != nil {
+			return err
+		}
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte("root"), bcrypt.DefaultCost)
-	if err != nil {
-		return err
-	}
-	rootID := uuid.New().String()
-	_, err = db.Exec("INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
-		rootID, "root", string(hash), "admin")
-	if err != nil {
-		return err
-	}
-
-	// Link all existing plans to root if they don't have an admin
+	// Link all existing plans to the super admin if they don't have an admin
 	rows, err := db.Query("SELECT id FROM plans WHERE id NOT IN (SELECT plan_id FROM plan_admins)")
 	if err != nil {
 		return err
@@ -260,7 +292,7 @@ func (db *DB) SeedRootUser() error {
 	}
 
 	for _, planID := range planIDs {
-		_, err = db.Exec("INSERT INTO plan_admins (plan_id, user_id) VALUES (?, ?)", planID, rootID)
+		_, err = db.Exec("INSERT INTO plan_admins (plan_id, user_id) VALUES (?, ?)", planID, superAdminID)
 		if err != nil {
 			return err
 		}

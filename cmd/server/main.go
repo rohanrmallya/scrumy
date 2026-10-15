@@ -49,6 +49,7 @@ func main() {
 
 	// ── API routes ───────────────────────────────────────────────────────────
 	authH := &handlers.AuthHandler{DB: database}
+	usersH := &handlers.UsersHandler{DB: database, Auth: authH}
 	plansH := &handlers.PlansHandler{DB: database, Auth: authH}
 	capacityH := &handlers.CapacityHandler{DB: database, Auth: authH}
 	presH := &handlers.PresentationsHandler{DB: database, Auth: authH}
@@ -62,6 +63,14 @@ func main() {
 		r.Post("/auth/register", authH.Register)
 		r.Post("/auth/logout", authH.Logout)
 		r.Get("/auth/me", authH.Me)
+		r.Post("/auth/change-password", authH.ChangePassword)
+
+		// Users (super admin only)
+		r.Get("/users", usersH.List)
+		r.Post("/users", usersH.Create)
+		r.Put("/users/{userID}", usersH.UpdateRole)
+		r.Put("/users/{userID}/password", usersH.ResetPassword)
+		r.Delete("/users/{userID}", usersH.Delete)
 
 		// Plans
 		r.Get("/plans", plansH.List)

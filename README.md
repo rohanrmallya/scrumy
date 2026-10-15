@@ -121,6 +121,33 @@ The server will start running on port `8080`: http://localhost:8080. You can con
 PORT=9000 SCRUMY_DB=mydata.db ./scrumy
 ```
 
+### Super Admin & User Management
+
+One account is the **Super Admin**. Its username is configurable via env (default: `root`):
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `SCRUMY_SUPERADMIN` (or `SCRUMY_SUPERADMIN_USERNAME`) | `root` | Super admin username, seeded automatically on startup |
+| `SCRUMY_SUPERADMIN_PASSWORD` | `root` | Initial password used only when the super admin account is first created |
+
+```bash
+SCRUMY_SUPERADMIN=adminboss SCRUMY_SUPERADMIN_PASSWORD=secret123 ./scrumy
+```
+
+Users holding the global `admin` role are also treated as super admins (backward compatible with the seeded `root` account).
+
+If the configured super admin username already exists in the database (e.g. upgrading with existing data), startup skips creation — the existing password is left untouched — and the existing user is treated as the superuser (granted the `admin` role if needed).
+
+- **Change password (any logged-in user):** `POST /api/auth/change-password` with `{ current_password, new_password }`, or use the *Change password* link in the navbar.
+- **Super admin user management** (see the *Users* page in the navbar when logged in as an admin):
+  - `GET /api/users` — list users
+  - `POST /api/users` — add a user (`{ username, password, role }`, role defaults to `user`)
+  - `PUT /api/users/{id}` — change role (`{ role: "admin" | "user" }`)
+  - `PUT /api/users/{id}/password` — reset password (`{ new_password }`, no old password needed; signs the user out)
+  - `DELETE /api/users/{id}` — delete a user
+
+The super admin account itself cannot be demoted or deleted, and you cannot delete or demote your own account.
+
 ---
 
 ## 🗄️ Database Schema Design
