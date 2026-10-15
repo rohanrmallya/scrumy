@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"scrumy/internal/db"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -11,7 +12,12 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// UsersHandler manages global user accounts. All endpoints require super admin.
+func trimSearchQuery(s string) string {
+	return strings.TrimSpace(s)
+}
+
+// UsersHandler manages global user accounts. Most endpoints require super admin;
+// Search is available to any authenticated user for admin pickers.
 type UsersHandler struct {
 	DB   *db.DB
 	Auth *AuthHandler
@@ -56,9 +62,50 @@ func (h *UsersHandler) requireSuperAdmin(w http.ResponseWriter, r *http.Request)
 	return true
 }
 
+// Search returns matching users (id + username only) for admin pickers.
+// Any authenticated user may call it; results are capped to avoid dumping.
+func (h *UsersHandler) Search(w http.ResponseWriter, r *http.Request) {
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil {
+		respondErr(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	q := r.URL.Query().Get("q")
+	// Support both ?q= and ?query= / ?search= for convenience.
+	if q == "" {
+		q = r.URL.Query().Get("query")
+	}
+	if q == "" {
+		q = r.URL.Query().Get("search")
+	}
+	q = trimSearchQuery(q)
+	if q == "" {
+		respond(w, http.StatusOK, []map[string]string{})
+		return
+	}
+	rows, err := h.DB.Query(
+		"SELECT id, username FROM users WHERE username LIKE ? ORDER BY username ASC LIMIT 20",
+		"%"+q+"%",
+	)
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	defer rows.Close()
+
+	results := []map[string]string{}
+	for rows.Next() {
+		var id, username string
+		if err := rows.Scan(&id, &username); err != nil {
+			continue
+		}
+		results = append(results, map[string]string{"id": id, "username": username})
+	}
+	respond(w, http.StatusOK, results)
+}
+
 // List returns all users (super admin only).
-func (h *UsersHandler) List(w http.ResponseWriter, r *http.Request) {
-	if !h.requireSuperAdmin(w, r) {
+func (h *UsersHandler) List(w http.ResponseWriter, r *http.Request) {	if !h.requireSuperAdmin(w, r) {
 		return
 	}
 	rows, err := h.DB.Query("SELECT id, username, role, created_at FROM users ORDER BY username ASC")

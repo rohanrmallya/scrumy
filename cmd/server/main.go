@@ -65,7 +65,8 @@ func main() {
 		r.Get("/auth/me", authH.Me)
 		r.Post("/auth/change-password", authH.ChangePassword)
 
-		// Users (super admin only)
+		// Users (super admin only, except search)
+		r.Get("/users/search", usersH.Search)
 		r.Get("/users", usersH.List)
 		r.Post("/users", usersH.Create)
 		r.Put("/users/{userID}", usersH.UpdateRole)

@@ -15,9 +15,29 @@
 
   let newAdminUsername = $state('');
   let addingAdmin = $state(false);
+  let addingUsername = $state<string | null>(null);
+  let removingUsername = $state<string | null>(null);
+  let adminError = $state('');
+  let adminNotice = $state('');
+
+  // Admin user search (add flow) + client-side filter for current admins
+  let adminSearchQuery = $state('');
+  let adminSearchResults = $state<{ id: string; username: string }[]>([]);
+  let searchingUsers = $state(false);
+  let showUserDropdown = $state(false);
+  let searchTimer: ReturnType<typeof setTimeout> | null = null;
+  let adminFilter = $state('');
+
+  const currentAdmins = $derived(plan?.admins ?? []);
+  const adminSet = $derived(new Set(currentAdmins));
+  const filteredAdmins = $derived(
+    adminFilter.trim()
+      ? currentAdmins.filter(a => a.toLowerCase().includes(adminFilter.trim().toLowerCase()))
+      : currentAdmins
+  );
 
   // Tab switcher
-  let activeTab = $state<'overview' | 'jira'>('overview');
+  let activeTab = $state<'overview' | 'jira' | 'admins'>('overview');
 
   // Jira Config Form
   let jiraURL = $state('');
@@ -217,32 +237,72 @@
     plan = await api.plans.get(planID);
   }
 
-  async function addAdmin() {
-    if (!newAdminUsername.trim()) return;
+  async function addAdminByUsername(username: string) {
+    const name = username.trim();
+    if (!name || addingUsername) return;
+    addingUsername = name;
     addingAdmin = true;
+    adminError = '';
+    adminNotice = '';
     try {
-      await api.plans.addAdmin(planID, newAdminUsername.trim());
-      newAdminUsername = '';
+      await api.plans.addAdmin(planID, name);
       plan = await api.plans.get(planID);
+      adminNotice = `"${name}" added as admin`;
+      newAdminUsername = '';
+      adminSearchQuery = '';
+      adminSearchResults = [];
+      showUserDropdown = false;
     } catch (e: any) {
-      alert(e.message);
+      adminError = e.message;
     } finally {
+      addingUsername = null;
       addingAdmin = false;
     }
   }
 
+  async function addAdmin() {
+    const name = (adminSearchQuery.trim() || newAdminUsername.trim());
+    if (!name) return;
+    await addAdminByUsername(name);
+  }
+
+  function onAdminSearchInput(value: string) {
+    adminSearchQuery = value;
+    adminError = '';
+    if (searchTimer) clearTimeout(searchTimer);
+    const q = value.trim();
+    if (q.length < 1) {
+      adminSearchResults = [];
+      searchingUsers = false;
+      showUserDropdown = false;
+      return;
+    }
+    showUserDropdown = true;
+    searchingUsers = true;
+    searchTimer = setTimeout(async () => {
+      try {
+        adminSearchResults = await api.users.search(q);
+      } catch (e: any) {
+        adminSearchResults = [];
+      } finally {
+        searchingUsers = false;
+      }
+    }, 250);
+  }
+
   async function removeAdmin(username: string) {
     if (!confirm(`Remove ${username} as admin?`)) return;
+    removingUsername = username;
+    adminError = '';
+    adminNotice = '';
     try {
-      const res = await fetch(`/api/plans/${planID}/admins`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username })
-      });
-      if (!res.ok) throw new Error(await res.text());
+      await api.plans.removeAdmin(planID, username);
       plan = await api.plans.get(planID);
+      adminNotice = `"${username}" removed`;
     } catch (e: any) {
-      alert(e.message);
+      adminError = e.message;
+    } finally {
+      removingUsername = null;
     }
   }
 
@@ -309,6 +369,14 @@
       >
         Jira Integration
       </button>
+      {#if plan?.is_admin}
+        <button
+          class="tab-btn {activeTab === 'admins' ? 'active' : ''}"
+          onclick={() => activeTab = 'admins'}
+        >
+          Manage Admins
+        </button>
+      {/if}
     </div>
 
     {#if activeTab === 'overview'}
@@ -570,28 +638,6 @@
           </div>
         </div>
 
-        <!-- Admins Management -->
-        {#if plan?.is_admin}
-          <div class="card" style="grid-column: 1 / -1;">
-            <div class="card-header">
-              <h2 class="font-semibold">Manage Admins</h2>
-            </div>
-            <div class="card-body">
-              <div class="flex gap-2" style="margin-bottom:16px;">
-                <input class="input" bind:value={newAdminUsername} placeholder="Username" style="max-width:200px;" />
-                <button class="btn btn-primary btn-sm" onclick={addAdmin} disabled={addingAdmin}>Add Admin</button>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                {#each plan.admins || [] as admin}
-                  <div class="badge badge-default flex items-center gap-2" style="padding:6px 10px;">
-                    {admin}
-                    <button class="btn-icon" style="font-size:12px;" onclick={() => removeAdmin(admin)}>✕</button>
-                  </div>
-                {/each}
-              </div>
-            </div>
-          </div>
-        {/if}
       </div>
     {:else if activeTab === 'jira'}
       <!-- Jira settings -->
@@ -647,6 +693,133 @@
                 {testResult.message}
               </div>
             {/if}
+          </div>
+        </div>
+      </div>
+    {:else if activeTab === 'admins'}
+      <!-- Admins Management -->
+      <div style="max-width:720px; margin:0 auto;">
+        <div class="card">
+          <div class="card-header">
+            <div class="flex items-center gap-2">
+              <span>👥</span>
+              <h2 class="font-semibold" style="font-size:15px;">Manage Admins ({currentAdmins.length})</h2>
+            </div>
+            <input
+              class="input"
+              style="max-width:220px; padding:6px 10px; font-size:12px;"
+              placeholder="Filter admins…"
+              bind:value={adminFilter}
+            />
+          </div>
+          <div class="card-body" style="display:flex; flex-direction:column; gap:16px;">
+            {#if adminError}
+              <div class="badge badge-danger" style="padding:8px 12px; border-radius:6px; font-size:12px; text-transform:none; letter-spacing:0; font-weight:400;">
+                ⚠️ {adminError}
+              </div>
+            {/if}
+            {#if adminNotice}
+              <div class="badge badge-success" style="padding:8px 12px; border-radius:6px; font-size:12px; text-transform:none; letter-spacing:0; font-weight:400;">
+                ✓ {adminNotice}
+              </div>
+            {/if}
+
+            <!-- Add admin via user search -->
+            <div class="form-group" style="position:relative;">
+              <label class="label" style="font-size:11px;" for="admin-search">Add admin — search users</label>
+              <div class="flex gap-2">
+                <input
+                  id="admin-search"
+                  class="input"
+                  placeholder="Type a username to search…"
+                  value={adminSearchQuery}
+                  oninput={(e) => onAdminSearchInput(e.currentTarget.value)}
+                  onfocus={() => { if (adminSearchQuery.trim()) showUserDropdown = true; }}
+                  onkeydown={(e) => { if (e.key === 'Enter') addAdmin(); if (e.key === 'Escape') showUserDropdown = false; }}
+                  autocomplete="off"
+                />
+                <button class="btn btn-primary btn-sm" style="white-space:nowrap;" onclick={addAdmin} disabled={addingAdmin || !adminSearchQuery.trim()}>
+                  {addingAdmin ? 'Adding…' : 'Add Admin'}
+                </button>
+              </div>
+              {#if showUserDropdown && adminSearchQuery.trim()}
+                <div style="position:absolute; top:100%; left:0; right:0; z-index:30; background:var(--c-surface); border:1px solid var(--c-border); border-radius:8px; margin-top:4px; box-shadow:var(--shadow-lg); overflow:hidden; max-height:260px; overflow-y:auto;">
+                  {#if searchingUsers}
+                    <div class="flex items-center gap-2" style="padding:12px 14px;">
+                      <span class="spinner"></span>
+                      <span class="text-sm text-muted">Searching…</span>
+                    </div>
+                  {:else if adminSearchResults.length === 0}
+                    <div style="padding:12px 14px;">
+                      <p class="text-sm text-muted">No users found for “{adminSearchQuery.trim()}”. Press Add to try the exact username.</p>
+                    </div>
+                  {:else}
+                    <table class="table">
+                      <tbody>
+                        {#each adminSearchResults as u (u.id)}
+                          <tr>
+                            <td class="font-medium" style="font-size:13px;">{u.username}</td>
+                            <td style="text-align:right;">
+                              {#if adminSet.has(u.username)}
+                                <span class="badge badge-success" style="font-size:10px;">Admin</span>
+                              {:else}
+                                <button
+                                  class="btn btn-primary btn-sm"
+                                  style="padding:4px 10px; font-size:12px;"
+                                  onclick={() => addAdminByUsername(u.username)}
+                                  disabled={addingUsername === u.username}
+                                >
+                                  {addingUsername === u.username ? 'Adding…' : 'Add'}
+                                </button>
+                              {/if}
+                            </td>
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+
+            <!-- Current admins table -->
+            <div>
+              <p class="text-xs font-semibold text-muted" style="text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px;">Current admins</p>
+              {#if currentAdmins.length === 0}
+                <div class="empty-state"><p>No admins yet.</p></div>
+              {:else if filteredAdmins.length === 0}
+                <div class="empty-state"><p>No admins match “{adminFilter}”.</p></div>
+              {:else}
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th style="width:48px;">#</th>
+                      <th>Username</th>
+                      <th style="text-align:right;">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each filteredAdmins as admin, i (admin)}
+                      <tr>
+                        <td class="text-sm text-muted">{i + 1}</td>
+                        <td class="font-medium" style="font-size:13px;">{admin}</td>
+                        <td style="text-align:right;">
+                          <button
+                            class="btn btn-secondary btn-sm"
+                            style="padding:4px 10px; font-size:12px; color:var(--c-danger);"
+                            onclick={() => removeAdmin(admin)}
+                            disabled={removingUsername === admin || currentAdmins.length <= 1}
+                            title={currentAdmins.length <= 1 ? 'Cannot remove the last admin' : `Remove ${admin}`}
+                          >
+                            {removingUsername === admin ? 'Removing…' : 'Remove'}
+                          </button>
+                        </td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              {/if}
+            </div>
           </div>
         </div>
       </div>

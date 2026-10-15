@@ -34,6 +34,11 @@ export interface ManagedUser {
 	is_super_admin?: boolean;
 }
 
+export interface UserSearchResult {
+	id: string;
+	username: string;
+}
+
 export interface AuthRequest {
 	username: string;
 	password?: string;
@@ -324,6 +329,7 @@ export const api = {
 	},
 	users: {
 		list: () => get<ManagedUser[]>('/users'),
+		search: (q: string) => get<UserSearchResult[]>(`/users/search?q=${encodeURIComponent(q)}`),
 		create: (body: { username: string; password: string; role?: string }) =>
 			post<ManagedUser>('/users', body),
 		updateRole: (id: string, role: string) => put<ManagedUser>(`/users/${id}`, { role }),
