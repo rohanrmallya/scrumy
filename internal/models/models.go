@@ -27,16 +27,59 @@ type Team struct {
 type Plan = Team
 
 type JiraSnapshot struct {
-	ID             string                `json:"id"`
-	TeamID         string                `json:"team_id"`
-	Name           string                `json:"name"`
-	StartDate      string                `json:"start_date"` // YYYY-MM-DD
-	EndDate        string                `json:"end_date"`   // YYYY-MM-DD
-	AllWorklogs    bool                  `json:"all_worklogs"`
-	Data           any                   `json:"data"`       // parsed JiraSnapshotData (or raw JSON bytes)
-	CreatedAt      time.Time             `json:"created_at"`
-	UpdatedAt      time.Time             `json:"updated_at"`
-	RefreshHistory []JiraSnapshotRefresh `json:"refresh_history"`
+	ID                    string                `json:"id"`
+	TeamID                string                `json:"team_id"`
+	Name                  string                `json:"name"`
+	StartDate             string                `json:"start_date"` // YYYY-MM-DD
+	EndDate               string                `json:"end_date"`   // YYYY-MM-DD
+	AllWorklogs           bool                  `json:"all_worklogs"`
+	Data                  any                   `json:"data"`       // parsed JiraSnapshotData (or raw JSON bytes)
+	AutoRefreshEnabled    bool                  `json:"auto_refresh_enabled"`
+	AutoRefreshTime       string                `json:"auto_refresh_time"` // HH:MM (24-hour)
+	NextRunAt             *time.Time            `json:"next_run_at,omitempty"`
+	LastAutoRefreshedAt   *time.Time            `json:"last_auto_refreshed_at,omitempty"`
+	LastAutoRefreshStatus string                `json:"last_auto_refresh_status,omitempty"` // 'success' | 'failed' | 'skipped'
+	LastAutoRefreshMsg    string                `json:"last_auto_refresh_msg,omitempty"`
+	CreatedAt             time.Time             `json:"created_at"`
+	UpdatedAt             time.Time             `json:"updated_at"`
+	RefreshHistory        []JiraSnapshotRefresh `json:"refresh_history"`
+}
+
+type JiraAutoRefreshAudit struct {
+	ID              string    `json:"id"`
+	SnapshotID      string    `json:"snapshot_id"`
+	SnapshotName    string    `json:"snapshot_name,omitempty"`
+	TeamID          string    `json:"team_id"`
+	TeamName        string    `json:"team_name,omitempty"`
+	TriggeredAt     time.Time `json:"triggered_at"`
+	TriggerType     string    `json:"trigger_type"` // scheduled | manual | disabled
+	Status          string    `json:"status"`       // success | failed | skipped
+	Message         string    `json:"message"`
+	PrevStoryPoints float64   `json:"prev_story_points"`
+	NewStoryPoints  float64   `json:"new_story_points"`
+	PrevHoursLogged float64   `json:"prev_hours_logged"`
+	NewHoursLogged  float64   `json:"new_hours_logged"`
+	PrevIssuesCount int       `json:"prev_issues_count"`
+	NewIssuesCount  int       `json:"new_issues_count"`
+	DurationMs      int64     `json:"duration_ms"`
+}
+
+type AutoRefreshJobInfo struct {
+	SnapshotID            string     `json:"snapshot_id"`
+	SnapshotName          string     `json:"snapshot_name"`
+	TeamID                string     `json:"team_id"`
+	TeamName              string     `json:"team_name"`
+	StartDate             string     `json:"start_date"`
+	EndDate               string     `json:"end_date"`
+	IsActive              bool       `json:"is_active"`   // start_date <= today <= end_date
+	DateStatus            string     `json:"date_status"` // "active" | "upcoming" | "expired"
+	AutoRefreshEnabled    bool       `json:"auto_refresh_enabled"`
+	AutoRefreshTime       string     `json:"auto_refresh_time"`
+	NextRunAt             *time.Time `json:"next_run_at,omitempty"`
+	LastAutoRefreshedAt   *time.Time `json:"last_auto_refreshed_at,omitempty"`
+	LastAutoRefreshStatus string     `json:"last_auto_refresh_status,omitempty"`
+	LastAutoRefreshMsg    string     `json:"last_auto_refresh_msg,omitempty"`
+	JiraConfigured        bool       `json:"jira_configured"`
 }
 
 type JiraUserRefreshDelta struct {

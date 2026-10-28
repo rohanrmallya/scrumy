@@ -57,6 +57,8 @@
   let newSnapshotName = $state('');
   let newSnapshotStart = $state('');
   let newSnapshotEnd = $state('');
+  let newSnapshotAutoRefresh = $state(false);
+  let newSnapshotAutoRefreshTime = $state('09:00');
   let creatingSnapshot = $state(false);
 
   onMount(async () => {
@@ -153,12 +155,16 @@
         start_date: newSnapshotStart,
         end_date: newSnapshotEnd,
         all_worklogs: false,
+        auto_refresh_enabled: newSnapshotAutoRefresh,
+        auto_refresh_time: newSnapshotAutoRefreshTime,
       });
       snapshots = [snap, ...snapshots];
       showCreateSnapshotForm = false;
       newSnapshotName = '';
       newSnapshotStart = '';
       newSnapshotEnd = '';
+      newSnapshotAutoRefresh = false;
+      newSnapshotAutoRefreshTime = '09:00';
       
       // Navigate to the dedicated snapshot page!
       goto(`/teams/${teamID}/snapshots/${snap.id}`);
@@ -184,6 +190,8 @@
   let editSnapshotName = $state('');
   let editSnapshotStart = $state('');
   let editSnapshotEnd = $state('');
+  let editSnapshotAutoRefresh = $state(false);
+  let editSnapshotAutoRefreshTime = $state('09:00');
   let updatingSnapshot = $state(false);
   let editSnapshotError = $state('');
 
@@ -192,6 +200,8 @@
     editSnapshotName = s.name;
     editSnapshotStart = s.start_date;
     editSnapshotEnd = s.end_date;
+    editSnapshotAutoRefresh = !!s.auto_refresh_enabled;
+    editSnapshotAutoRefreshTime = s.auto_refresh_time || '09:00';
     editSnapshotError = '';
   }
 
@@ -208,6 +218,8 @@
         name: editSnapshotName.trim(),
         start_date: editSnapshotStart,
         end_date: editSnapshotEnd,
+        auto_refresh_enabled: editSnapshotAutoRefresh,
+        auto_refresh_time: editSnapshotAutoRefreshTime,
       });
       snapshots = snapshots.map(s => s.id === updated.id ? updated : s);
       activeEditSnapshot = null;
@@ -600,6 +612,21 @@
                   <input type="date" class="input" style="padding:4px; font-size:12px;" bind:value={newSnapshotEnd} />
                 </div>
 
+                <div style="background:var(--c-surface); border:1px solid var(--c-border); border-radius:6px; padding:8px 10px; margin-top:2px;">
+                  <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:11px; font-weight:500;">
+                    <input type="checkbox" bind:checked={newSnapshotAutoRefresh} />
+                    <span>⏰ Enable Daily Auto-Refresh</span>
+                  </label>
+                  {#if newSnapshotAutoRefresh}
+                    <div style="margin-top:8px; display:flex; align-items:center; gap:8px;">
+                      <label class="label" style="font-size:10px; margin:0; white-space:nowrap;">Daily Time</label>
+                      <input type="time" class="input" style="padding:4px 8px; font-size:11px; width:auto;" bind:value={newSnapshotAutoRefreshTime} />
+                    </div>
+                    <p class="text-xs text-muted" style="margin-top:4px; font-size:10px;">
+                      Automatically refreshes daily at this time between start and end dates.
+                    </p>
+                  {/if}
+                </div>
                 
                 <button class="btn btn-primary btn-sm" onclick={createSnapshot} disabled={creatingSnapshot} style="margin-top:6px; font-size:11px; width: 100%;">
                   {creatingSnapshot ? 'Generating...' : '✓ Generate'}
@@ -639,8 +666,12 @@
                         >✕</button>
                       </div>
                     {/if}
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <p class="text-xs text-muted" style="margin:0;">{s.start_date} to {s.end_date}</p>
+                    {#if s.auto_refresh_enabled}
+                      <span class="badge badge-primary" style="font-size:10px; padding:2px 6px;">⏰ Auto: {s.auto_refresh_time || '09:00'}</span>
+                    {/if}
                   </div>
-                  <p class="text-xs text-muted">{s.start_date} to {s.end_date}</p>
                 </a>
               {/each}
               <div style="padding:12px; text-align:center;">
@@ -931,6 +962,22 @@
           <div class="form-group">
             <label class="label" style="font-size:11px; margin-bottom:6px;">End Date</label>
             <input type="date" class="input" style="padding:8px; font-size:13px;" bind:value={editSnapshotEnd} />
+          </div>
+
+          <div style="background:var(--c-bg); border:1px solid var(--c-border); border-radius:8px; padding:12px;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; font-weight:500;">
+              <input type="checkbox" bind:checked={editSnapshotAutoRefresh} />
+              <span>⏰ Enable Daily Auto-Refresh</span>
+            </label>
+            {#if editSnapshotAutoRefresh}
+              <div style="margin-top:10px; display:flex; align-items:center; gap:10px;">
+                <label class="label" style="font-size:11px; margin:0; white-space:nowrap;">Daily Time (24h)</label>
+                <input type="time" class="input" style="padding:6px 10px; font-size:12px; width:auto;" bind:value={editSnapshotAutoRefreshTime} />
+              </div>
+              <p class="text-xs text-muted" style="margin-top:6px; font-size:11px;">
+                Jira data will automatically refresh every day at this time between {editSnapshotStart || 'start'} and {editSnapshotEnd || 'end'}.
+              </p>
+            {/if}
           </div>
         </div>
 

@@ -228,6 +228,56 @@ func (db *DB) Migrate() error {
 		return fmt.Errorf("migrate plans to teams: %w", err)
 	}
 
+	// Migration 8: Add auto-refresh columns to jira_snapshots and create jira_auto_refresh_audits table
+	autoRefreshCols := map[string]string{
+		"auto_refresh_enabled":     "ALTER TABLE jira_snapshots ADD COLUMN auto_refresh_enabled INTEGER NOT NULL DEFAULT 0",
+		"auto_refresh_time":        "ALTER TABLE jira_snapshots ADD COLUMN auto_refresh_time TEXT NOT NULL DEFAULT '09:00'",
+		"next_run_at":              "ALTER TABLE jira_snapshots ADD COLUMN next_run_at DATETIME",
+		"last_auto_refreshed_at":   "ALTER TABLE jira_snapshots ADD COLUMN last_auto_refreshed_at DATETIME",
+		"last_auto_refresh_status": "ALTER TABLE jira_snapshots ADD COLUMN last_auto_refresh_status TEXT NOT NULL DEFAULT ''",
+		"last_auto_refresh_msg":    "ALTER TABLE jira_snapshots ADD COLUMN last_auto_refresh_msg TEXT NOT NULL DEFAULT ''",
+	}
+	for col, sqlStmt := range autoRefreshCols {
+		if !columnExists(db, "jira_snapshots", col) {
+			log.Printf("⚡ Migrating: adding %s to jira_snapshots table\n", col)
+			if _, err := db.Exec(sqlStmt); err != nil {
+				return fmt.Errorf("add column %s to jira_snapshots: %w", col, err)
+			}
+		}
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS jira_auto_refresh_audits (
+			id                  TEXT PRIMARY KEY,
+			snapshot_id         TEXT NOT NULL REFERENCES jira_snapshots(id) ON DELETE CASCADE,
+			team_id             TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+			triggered_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+			trigger_type        TEXT NOT NULL DEFAULT 'scheduled',
+			status              TEXT NOT NULL,
+			message             TEXT NOT NULL DEFAULT '',
+			prev_story_points   REAL NOT NULL DEFAULT 0,
+			new_story_points    REAL NOT NULL DEFAULT 0,
+			prev_hours_logged   REAL NOT NULL DEFAULT 0,
+			new_hours_logged    REAL NOT NULL DEFAULT 0,
+			prev_issues_count   INTEGER NOT NULL DEFAULT 0,
+			new_issues_count    INTEGER NOT NULL DEFAULT 0,
+			duration_ms         INTEGER NOT NULL DEFAULT 0
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("create jira_auto_refresh_audits table: %w", err)
+	}
+
+	for _, stmt := range []string{
+		"CREATE INDEX IF NOT EXISTS idx_jira_auto_refresh_audits_snapshot_id ON jira_auto_refresh_audits(snapshot_id)",
+		"CREATE INDEX IF NOT EXISTS idx_jira_auto_refresh_audits_team_id ON jira_auto_refresh_audits(team_id)",
+		"CREATE INDEX IF NOT EXISTS idx_jira_auto_refresh_audits_triggered_at ON jira_auto_refresh_audits(triggered_at)",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("create auto refresh audit index: %w", err)
+		}
+	}
+
 	return nil
 }
 

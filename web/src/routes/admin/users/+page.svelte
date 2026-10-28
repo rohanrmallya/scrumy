@@ -1,14 +1,133 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { api, type ManagedUser, type BulkRefreshResponse, type SnapshotRefreshResult } from '$lib/api';
+  import {
+    api,
+    type ManagedUser,
+    type BulkRefreshResponse,
+    type SnapshotRefreshResult,
+    type AutoRefreshJobInfo,
+    type JiraAutoRefreshAudit,
+  } from '$lib/api';
   import { user } from '$lib/auth';
 
-  let activeTab = $state<'users' | 'operations'>('users');
+  let activeTab = $state<'users' | 'operations' | 'autorefresh'>('users');
   let users = $state<ManagedUser[]>([]);
   let loading = $state(true);
   let error = $state('');
   let notice = $state('');
+
+  // Auto-Refresh state
+  let autoRefreshJobs = $state<AutoRefreshJobInfo[]>([]);
+  let autoRefreshAudits = $state<JiraAutoRefreshAudit[]>([]);
+  let loadingAutoRefresh = $state(false);
+  let autoRefreshFilterStatus = $state<string>('all');
+  let autoRefreshSearch = $state<string>('');
+  let disablingJobId = $state<string>('');
+  let runningJobId = $state<string>('');
+
+  function formatDateTime(utcString?: string) {
+    if (!utcString) return '—';
+    try {
+      const date = new Date(utcString);
+      if (isNaN(date.getTime())) return utcString;
+      return date.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return utcString;
+    }
+  }
+
+  async function loadAutoRefreshData() {
+    loadingAutoRefresh = true;
+    try {
+      const [jobs, audits] = await Promise.all([
+        api.admin.getAutoRefreshJobs(),
+        api.admin.getAutoRefreshAudits({ limit: 100 })
+      ]);
+      autoRefreshJobs = jobs || [];
+      autoRefreshAudits = audits || [];
+    } catch (e: any) {
+      error = `Failed to load auto-refresh data: ${e.message}`;
+    } finally {
+      loadingAutoRefresh = false;
+    }
+  }
+
+  async function disableJob(job: AutoRefreshJobInfo) {
+    if (!confirm(`Disable daily auto-refresh for "${job.snapshot_name}" in project "${job.team_name}"?`)) return;
+    disablingJobId = job.snapshot_id;
+    error = '';
+    notice = '';
+    try {
+      await api.admin.disableAutoRefresh(job.team_id, job.snapshot_id);
+      notice = `✓ Auto-refresh disabled for "${job.snapshot_name}" (${job.team_name})`;
+      await loadAutoRefreshData();
+    } catch (e: any) {
+      error = `Failed to disable auto-refresh: ${e.message}`;
+    } finally {
+      disablingJobId = '';
+    }
+  }
+
+  async function runJobNow(job: AutoRefreshJobInfo) {
+    if (!confirm(`Trigger immediate auto-refresh for "${job.snapshot_name}" (${job.team_name})?`)) return;
+    runningJobId = job.snapshot_id;
+    error = '';
+    notice = '';
+    try {
+      const res = await api.admin.runAutoRefresh(job.team_id, job.snapshot_id);
+      if (res.status === 'success') {
+        notice = `✓ Auto-refresh executed successfully for "${job.snapshot_name}" (${res.duration_ms}ms).`;
+      } else if (res.status === 'skipped') {
+        notice = `ℹ️ Auto-refresh skipped for "${job.snapshot_name}": ${res.message}`;
+      } else {
+        error = `Auto-refresh ${res.status} for "${job.snapshot_name}": ${res.message || 'Error occurred'}`;
+      }
+      await loadAutoRefreshData();
+    } catch (e: any) {
+      error = `Failed to run auto-refresh: ${e.message}`;
+    } finally {
+      runningJobId = '';
+    }
+  }
+
+  const filteredJobs = $derived.by(() => {
+    let list = autoRefreshJobs;
+    if (autoRefreshSearch.trim()) {
+      const q = autoRefreshSearch.trim().toLowerCase();
+      list = list.filter(j =>
+        (j.snapshot_name || '').toLowerCase().includes(q) ||
+        (j.team_name || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  });
+
+  const filteredAudits = $derived.by(() => {
+    let list = autoRefreshAudits;
+    if (autoRefreshFilterStatus !== 'all') {
+      list = list.filter(a => a.status === autoRefreshFilterStatus);
+    }
+    if (autoRefreshSearch.trim()) {
+      const q = autoRefreshSearch.trim().toLowerCase();
+      list = list.filter(a =>
+        (a.snapshot_name || '').toLowerCase().includes(q) ||
+        (a.team_name || '').toLowerCase().includes(q) ||
+        (a.message || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  });
+
+  const activeJobsCount = $derived(autoRefreshJobs.filter(j => j.active_status === 'active').length);
+  const upcomingJobsCount = $derived(autoRefreshJobs.filter(j => j.active_status === 'upcoming').length);
+  const expiredJobsCount = $derived(autoRefreshJobs.filter(j => j.active_status === 'expired').length);
 
   // Create form
   let newUsername = $state('');
@@ -38,6 +157,7 @@
       if (users.length > 0 && !bulkSelectedUsername) {
         bulkSelectedUsername = users[0].username;
       }
+      api.admin.getAutoRefreshJobs().then(jobs => { autoRefreshJobs = jobs || []; }).catch(() => {});
     } catch (e: any) {
       error = e.message;
     } finally {
@@ -181,6 +301,13 @@
         style="display:flex; align-items:center; gap:6px;"
       >
         <span>⚡</span> All Projects Operations
+      </button>
+      <button
+        class="btn btn-sm {activeTab === 'autorefresh' ? 'btn-primary' : 'btn-ghost'}"
+        onclick={() => { activeTab = 'autorefresh'; loadAutoRefreshData(); }}
+        style="display:flex; align-items:center; gap:6px;"
+      >
+        <span>⏰</span> Auto-Refresh Jobs ({autoRefreshJobs.length})
       </button>
     </div>
 
@@ -463,6 +590,318 @@
           </div>
         </div>
 
+      </div>
+    {:else if activeTab === 'autorefresh'}
+      <!-- Auto-Refresh Jobs & Audit Logs Tab -->
+      <div style="display:flex; flex-direction:column; gap:20px;">
+        <!-- KPI Summary Cards -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
+          <div class="card" style="padding:16px;">
+            <p class="text-xs text-muted font-semibold" style="text-transform:uppercase; letter-spacing:0.05em; font-size:10px;">Total Configured Jobs</p>
+            <p class="text-2xl font-bold" style="margin-top:4px; color:var(--c-primary);">{autoRefreshJobs.length}</p>
+            <p class="text-xs text-muted" style="margin-top:2px;">Across all projects</p>
+          </div>
+          <div class="card" style="padding:16px;">
+            <p class="text-xs text-muted font-semibold" style="text-transform:uppercase; letter-spacing:0.05em; font-size:10px;">Active Today</p>
+            <p class="text-2xl font-bold" style="margin-top:4px; color:var(--c-success);">{activeJobsCount}</p>
+            <p class="text-xs text-muted" style="margin-top:2px;">Currently within sprint dates</p>
+          </div>
+          <div class="card" style="padding:16px;">
+            <p class="text-xs text-muted font-semibold" style="text-transform:uppercase; letter-spacing:0.05em; font-size:10px;">Upcoming / Expired</p>
+            <p class="text-2xl font-bold" style="margin-top:4px;">
+              <span style="color:var(--c-warning);">{upcomingJobsCount}</span>
+              <span class="text-muted" style="font-weight:normal; font-size:18px;"> / </span>
+              <span style="color:var(--c-text-3);">{expiredJobsCount}</span>
+            </p>
+            <p class="text-xs text-muted" style="margin-top:2px;">{upcomingJobsCount} upcoming · {expiredJobsCount} ended</p>
+          </div>
+          <div class="card" style="padding:16px;">
+            <p class="text-xs text-muted font-semibold" style="text-transform:uppercase; letter-spacing:0.05em; font-size:10px;">Audit Events</p>
+            <p class="text-2xl font-bold" style="margin-top:4px;">{autoRefreshAudits.length}</p>
+            <p class="text-xs text-muted" style="margin-top:2px;">Logged execution records</p>
+          </div>
+        </div>
+
+        <!-- All Projects Auto-Refresh Jobs Card -->
+        <div class="card">
+          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div>
+              <h2 class="font-semibold" style="font-size:15px; display:flex; align-items:center; gap:8px;">
+                <span>⏰</span> All Projects Auto-Refresh Jobs ({filteredJobs.length})
+              </h2>
+              <p class="text-xs text-muted" style="margin-top:2px; margin-bottom:0;">
+                All snapshot refresh schedules enabled across projects. Superadmins can monitor, test run, or disable any job.
+              </p>
+            </div>
+            <div class="flex gap-2" style="align-items:center;">
+              <input
+                type="text"
+                class="input"
+                placeholder="Search project or snapshot…"
+                bind:value={autoRefreshSearch}
+                style="font-size:12px; padding:6px 12px; width:220px;"
+              />
+              <button
+                class="btn btn-secondary btn-sm"
+                onclick={loadAutoRefreshData}
+                disabled={loadingAutoRefresh}
+                style="display:inline-flex; align-items:center; gap:4px;"
+              >
+                {#if loadingAutoRefresh}
+                  <span class="spinner" style="width:12px; height:12px;"></span>
+                {:else}
+                  <span>↻</span>
+                {/if}
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+          <div class="card-body" style="padding:0; overflow-x:auto;">
+            {#if loadingAutoRefresh && autoRefreshJobs.length === 0}
+              <div class="flex items-center gap-3" style="padding:24px;">
+                <span class="spinner"></span>
+                <span class="text-muted">Loading auto-refresh jobs…</span>
+              </div>
+            {:else if filteredJobs.length === 0}
+              <div class="empty-state" style="padding:32px 20px; text-align:center;">
+                <p style="font-size:13px; color:var(--c-text-3); margin:0;">
+                  {#if autoRefreshSearch.trim()}
+                    No auto-refresh jobs matching "{autoRefreshSearch}".
+                  {:else}
+                    No snapshot auto-refresh jobs are currently enabled in any project.
+                  {/if}
+                </p>
+              </div>
+            {:else}
+              <table class="table" style="width:100%; font-size:12px;">
+                <thead>
+                  <tr style="background:var(--c-bg); border-bottom:1px solid var(--c-border); color:var(--c-text-2);">
+                    <th style="padding:10px 16px; text-align:left;">Project</th>
+                    <th style="padding:10px 16px; text-align:left;">Snapshot</th>
+                    <th style="padding:10px 16px; text-align:left;">Sprint Window & Status</th>
+                    <th style="padding:10px 16px; text-align:left;">Daily Time</th>
+                    <th style="padding:10px 16px; text-align:left;">Next Scheduled Run</th>
+                    <th style="padding:10px 16px; text-align:left;">Last Auto-Refresh</th>
+                    <th style="padding:10px 16px; text-align:right;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each filteredJobs as job}
+                    <tr style="border-bottom:1px solid var(--c-border);">
+                      <td style="padding:10px 16px;">
+                        <a href="/teams/{job.team_id}" class="font-semibold" style="color:var(--c-primary); text-decoration:none;">
+                          {job.team_name}
+                        </a>
+                      </td>
+                      <td style="padding:10px 16px;">
+                        <a href="/teams/{job.team_id}/snapshots/{job.snapshot_id}" class="font-medium" style="color:var(--c-text); text-decoration:none;">
+                          📸 {job.snapshot_name}
+                        </a>
+                      </td>
+                      <td style="padding:10px 16px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                          <span>{job.start_date} – {job.end_date}</span>
+                          {#if job.active_status === 'active'}
+                            <span class="badge badge-success" style="font-size:10px; padding:2px 6px;">🟢 Active</span>
+                          {:else if job.active_status === 'upcoming'}
+                            <span class="badge badge-warning" style="font-size:10px; padding:2px 6px;">🟡 Upcoming</span>
+                          {:else}
+                            <span class="badge badge-secondary" style="font-size:10px; padding:2px 6px;">⚪ Expired</span>
+                          {/if}
+                        </div>
+                      </td>
+                      <td style="padding:10px 16px; font-weight:600;">
+                        ⏰ {job.auto_refresh_time}
+                      </td>
+                      <td style="padding:10px 16px; font-family:ui-monospace, monospace; color:var(--c-text-2);">
+                        {formatDateTime(job.next_run_at)}
+                      </td>
+                      <td style="padding:10px 16px;">
+                        {#if job.last_auto_refreshed_at}
+                          <div style="display:flex; flex-direction:column; gap:2px;">
+                            <span style="font-size:11px;">{formatDateTime(job.last_auto_refreshed_at)}</span>
+                            <div>
+                              {#if job.last_auto_refresh_status === 'success'}
+                                <span class="badge badge-success" style="font-size:9px; padding:1px 5px;">Success</span>
+                              {:else if job.last_auto_refresh_status === 'skipped'}
+                                <span class="badge badge-warning" style="font-size:9px; padding:1px 5px;" title={job.last_auto_refresh_msg}>Skipped</span>
+                              {:else}
+                                <span class="badge badge-danger" style="font-size:9px; padding:1px 5px;" title={job.last_auto_refresh_msg}>Failed</span>
+                              {/if}
+                            </div>
+                          </div>
+                        {:else}
+                          <span class="text-muted">—</span>
+                        {/if}
+                      </td>
+                      <td style="padding:10px 16px; text-align:right;">
+                        <div class="flex gap-2 justify-end" style="align-items:center;">
+                          <button
+                            class="btn btn-secondary btn-sm"
+                            style="font-size:11px; padding:4px 8px; display:inline-flex; align-items:center; gap:4px;"
+                            onclick={() => runJobNow(job)}
+                            disabled={runningJobId === job.snapshot_id}
+                            title="Trigger test auto-refresh now"
+                          >
+                            {#if runningJobId === job.snapshot_id}
+                              <span class="spinner" style="width:10px; height:10px;"></span>
+                              <span>Running…</span>
+                            {:else}
+                              <span>⚡ Run Now</span>
+                            {/if}
+                          </button>
+                          <button
+                            class="btn btn-outline-danger btn-sm"
+                            style="font-size:11px; padding:4px 8px; display:inline-flex; align-items:center; gap:4px; color:var(--c-danger); border:1px solid var(--c-danger); background:transparent;"
+                            onclick={() => disableJob(job)}
+                            disabled={disablingJobId === job.snapshot_id}
+                            title="Disable auto-refresh for this snapshot"
+                          >
+                            {#if disablingJobId === job.snapshot_id}
+                              <span class="spinner" style="width:10px; height:10px;"></span>
+                              <span>Disabling…</span>
+                            {:else}
+                              <span>Disable</span>
+                            {/if}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Global Auto-Refresh Audit Logs Card -->
+        <div class="card">
+          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div>
+              <h2 class="font-semibold" style="font-size:15px; display:flex; align-items:center; gap:8px;">
+                <span>📋</span> Global Auto-Refresh Audit Logs ({filteredAudits.length})
+              </h2>
+              <p class="text-xs text-muted" style="margin-top:2px; margin-bottom:0;">
+                Complete audit history of automated scheduled runs and manual triggers across all projects.
+              </p>
+            </div>
+            <div class="flex gap-2" style="align-items:center; flex-wrap:wrap;">
+              <!-- Status filter buttons -->
+              <div style="display:flex; gap:4px; background:var(--c-bg); border:1px solid var(--c-border); border-radius:6px; padding:2px;">
+                <button
+                  class="btn btn-sm {autoRefreshFilterStatus === 'all' ? 'btn-primary' : 'btn-ghost'}"
+                  style="font-size:11px; padding:3px 8px; height:auto;"
+                  onclick={() => autoRefreshFilterStatus = 'all'}
+                >
+                  All
+                </button>
+                <button
+                  class="btn btn-sm {autoRefreshFilterStatus === 'success' ? 'btn-primary' : 'btn-ghost'}"
+                  style="font-size:11px; padding:3px 8px; height:auto;"
+                  onclick={() => autoRefreshFilterStatus = 'success'}
+                >
+                  Success
+                </button>
+                <button
+                  class="btn btn-sm {autoRefreshFilterStatus === 'skipped' ? 'btn-primary' : 'btn-ghost'}"
+                  style="font-size:11px; padding:3px 8px; height:auto;"
+                  onclick={() => autoRefreshFilterStatus = 'skipped'}
+                >
+                  Skipped
+                </button>
+                <button
+                  class="btn btn-sm {autoRefreshFilterStatus === 'failed' ? 'btn-primary' : 'btn-ghost'}"
+                  style="font-size:11px; padding:3px 8px; height:auto;"
+                  onclick={() => autoRefreshFilterStatus = 'failed'}
+                >
+                  Failed
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="card-body" style="padding:0; overflow-x:auto;">
+            {#if loadingAutoRefresh && autoRefreshAudits.length === 0}
+              <div class="flex items-center gap-3" style="padding:24px;">
+                <span class="spinner"></span>
+                <span class="text-muted">Loading audit logs…</span>
+              </div>
+            {:else if filteredAudits.length === 0}
+              <div class="empty-state" style="padding:32px 20px; text-align:center;">
+                <p style="font-size:13px; color:var(--c-text-3); margin:0;">
+                  No audit log entries found.
+                </p>
+              </div>
+            {:else}
+              <table class="table" style="width:100%; font-size:12px;">
+                <thead>
+                  <tr style="background:var(--c-bg); border-bottom:1px solid var(--c-border); color:var(--c-text-2);">
+                    <th style="padding:10px 16px; text-align:left;">Triggered At</th>
+                    <th style="padding:10px 16px; text-align:left;">Project</th>
+                    <th style="padding:10px 16px; text-align:left;">Snapshot</th>
+                    <th style="padding:10px 16px; text-align:left;">Trigger</th>
+                    <th style="padding:10px 16px; text-align:left;">Status</th>
+                    <th style="padding:10px 16px; text-align:right;">Delta</th>
+                    <th style="padding:10px 16px; text-align:right;">Duration</th>
+                    <th style="padding:10px 16px; text-align:left;">Details / Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each filteredAudits as a}
+                    <tr style="border-bottom:1px solid var(--c-border);">
+                      <td style="padding:10px 16px; font-family:ui-monospace, monospace; color:var(--c-text-2); white-space:nowrap;">
+                        {formatDateTime(a.triggered_at)}
+                      </td>
+                      <td style="padding:10px 16px;">
+                        <a href="/teams/{a.team_id}" style="color:var(--c-primary); text-decoration:none; font-weight:500;">
+                          {a.team_name || a.team_id}
+                        </a>
+                      </td>
+                      <td style="padding:10px 16px;">
+                        <a href="/teams/{a.team_id}/snapshots/{a.snapshot_id}" style="color:var(--c-text); text-decoration:none; font-weight:500;">
+                          {a.snapshot_name || a.snapshot_id}
+                        </a>
+                      </td>
+                      <td style="padding:10px 16px;">
+                        <span class="badge {a.trigger_type === 'scheduled' ? 'badge-secondary' : 'badge-primary'}" style="font-size:10px; text-transform:capitalize;">
+                          {a.trigger_type}
+                        </span>
+                      </td>
+                      <td style="padding:10px 16px;">
+                        {#if a.status === 'success'}
+                          <span class="badge badge-success" style="font-size:10px;">Success</span>
+                        {:else if a.status === 'skipped'}
+                          <span class="badge badge-warning" style="font-size:10px;">Skipped</span>
+                        {:else}
+                          <span class="badge badge-danger" style="font-size:10px;">Failed</span>
+                        {/if}
+                      </td>
+                      <td style="padding:10px 16px; text-align:right; white-space:nowrap;">
+                        {#if a.status === 'success'}
+                          <span style="font-weight:600; color:{a.hours_delta > 0 ? 'var(--c-success)' : 'var(--c-text)'};">
+                            {a.hours_delta > 0 ? '+' : ''}{a.hours_delta.toFixed(1)}h
+                          </span>
+                          {#if a.story_points_delta !== 0}
+                            <span class="text-muted" style="font-size:11px; margin-left:4px;">
+                              ({a.story_points_delta > 0 ? '+' : ''}{a.story_points_delta.toFixed(1)} SP)
+                            </span>
+                          {/if}
+                        {:else}
+                          <span class="text-muted">—</span>
+                        {/if}
+                      </td>
+                      <td style="padding:10px 16px; text-align:right; font-family:ui-monospace, monospace; color:var(--c-text-2); white-space:nowrap;">
+                        {a.duration_ms}ms
+                      </td>
+                      <td style="padding:10px 16px; color:var(--c-text-2); max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title={a.message || ''}>
+                        {a.message || '—'}
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </div>
+        </div>
       </div>
     {/if}
   {/if}

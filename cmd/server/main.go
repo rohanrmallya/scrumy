@@ -10,7 +10,9 @@ import (
 	"path"
 	"scrumy/internal/db"
 	"scrumy/internal/handlers"
+	"scrumy/internal/scheduler"
 	"strings"
+	"time"
 
 	"scrumy"
 
@@ -55,6 +57,14 @@ func main() {
 	presH := &handlers.PresentationsHandler{DB: database, Auth: authH}
 	jiraH := &handlers.JiraHandler{DB: database, Auth: authH}
 
+	// ── Auto-Refresh Background Scheduler ─────────────────────────────────────
+	sched := scheduler.New(database, func(teamID, snapshotID, triggerType string) error {
+		_, err := jiraH.ExecuteAutoRefresh(teamID, snapshotID, triggerType)
+		return err
+	}, 30*time.Second)
+	sched.Start()
+	defer sched.Stop()
+
 	registerTeamRoutes := func(r chi.Router, prefix string) {
 		// Teams
 		r.Get(prefix, teamsH.List)
@@ -75,6 +85,13 @@ func main() {
 		r.Post(prefix+"/{teamID}/jira/snapshots/{snapshotID}/refresh", jiraH.RefreshSnapshot)
 		r.Delete(prefix+"/{teamID}/jira/snapshots/{snapshotID}", jiraH.DeleteSnapshot)
 		r.Post(prefix+"/{teamID}/jira/snapshots/{snapshotID}/issues/{issueKey}/toggle-planned", jiraH.ToggleIssuePlanned)
+
+		// Jira Auto-Refresh Jobs & Audits
+		r.Get(prefix+"/{teamID}/jira/auto-refresh/jobs", jiraH.GetTeamAutoRefreshJobs)
+		r.Get(prefix+"/{teamID}/jira/auto-refresh/audits", jiraH.GetTeamAutoRefreshAudits)
+		r.Put(prefix+"/{teamID}/jira/snapshots/{snapshotID}/auto-refresh", jiraH.UpdateAutoRefreshSettings)
+		r.Post(prefix+"/{teamID}/jira/snapshots/{snapshotID}/auto-refresh/disable", jiraH.DisableAutoRefresh)
+		r.Post(prefix+"/{teamID}/jira/snapshots/{snapshotID}/auto-refresh/run", jiraH.RunAutoRefreshNow)
 
 		// Capacity Plans
 		r.Get(prefix+"/{teamID}/capacity", capacityH.List)
@@ -124,11 +141,15 @@ func main() {
 		r.Put("/users/{userID}/password", usersH.ResetPassword)
 		r.Delete("/users/{userID}", usersH.Delete)
 
-		// Super admin bulk operations
+		// Super admin operations
 		r.Group(func(r chi.Router) {
 			r.Use(authH.RequireSuperAdmin)
 			r.Post("/admin/snapshots/refresh-all", jiraH.RefreshAllSnapshots)
 			r.Post("/admin/teams/add-admin", teamsH.AddAdminToAllTeams)
+			r.Get("/admin/auto-refresh/jobs", jiraH.GetAllAutoRefreshJobs)
+			r.Get("/admin/auto-refresh/audits", jiraH.GetAllAutoRefreshAudits)
+			r.Post("/admin/snapshots/{snapshotID}/auto-refresh/disable", jiraH.SuperAdminDisableAutoRefresh)
+			r.Post("/admin/snapshots/{snapshotID}/auto-refresh/run", jiraH.SuperAdminRunAutoRefresh)
 		})
 
 		// Teams (current) + deprecated /plans aliases for backward compatibility

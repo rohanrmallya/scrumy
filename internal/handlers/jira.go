@@ -9,11 +9,32 @@ import (
 	"scrumy/internal/db"
 	"scrumy/internal/jira"
 	"scrumy/internal/models"
+	"scrumy/internal/scheduler"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
+
+func parseDBTime(str string) *time.Time {
+	str = strings.TrimSpace(str)
+	if str == "" {
+		return nil
+	}
+	formats := []string{
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05Z",
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+	}
+	for _, f := range formats {
+		if t, err := time.Parse(f, str); err == nil {
+			return &t
+		}
+	}
+	return nil
+}
 
 type JiraHandler struct {
 	DB   *db.DB
@@ -134,14 +155,20 @@ func (h *JiraHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name        string `json:"name"`
-		StartDate   string `json:"start_date"` // YYYY-MM-DD
-		EndDate     string `json:"end_date"`   // YYYY-MM-DD
-		AllWorklogs bool   `json:"all_worklogs"`
+		Name               string `json:"name"`
+		StartDate          string `json:"start_date"` // YYYY-MM-DD
+		EndDate            string `json:"end_date"`   // YYYY-MM-DD
+		AllWorklogs        bool   `json:"all_worklogs"`
+		AutoRefreshEnabled bool   `json:"auto_refresh_enabled"`
+		AutoRefreshTime    string `json:"auto_refresh_time"`
 	}
 	if err := decode(r, &body); err != nil || body.Name == "" || body.StartDate == "" || body.EndDate == "" {
 		respondErr(w, 400, "name, start_date, and end_date are required")
 		return
+	}
+
+	if body.AutoRefreshTime == "" {
+		body.AutoRefreshTime = "09:00"
 	}
 
 	client, jql, spField, err := h.getClientForTeam(teamID)
@@ -163,10 +190,19 @@ func (h *JiraHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := uuid.NewString()
+	var nextRunAtVal sql.NullString
+	if body.AutoRefreshEnabled {
+		nextRun := scheduler.CalculateNextRun(body.AutoRefreshTime, time.Now())
+		nextRunAtVal = sql.NullString{String: nextRun.Format("2006-01-02 15:04:05"), Valid: true}
+	}
+
 	_, err = h.DB.Exec(`
-		INSERT INTO jira_snapshots (id, team_id, name, start_date, end_date, all_worklogs, data)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, id, teamID, body.Name, body.StartDate, body.EndDate, body.AllWorklogs, string(jsonData))
+		INSERT INTO jira_snapshots (
+			id, team_id, name, start_date, end_date, all_worklogs, data,
+			auto_refresh_enabled, auto_refresh_time, next_run_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, id, teamID, body.Name, body.StartDate, body.EndDate, body.AllWorklogs, string(jsonData),
+		body.AutoRefreshEnabled, body.AutoRefreshTime, nextRunAtVal)
 	if err != nil {
 		respondErr(w, 500, err.Error())
 		return
@@ -179,7 +215,10 @@ func (h *JiraHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 	teamID := teamIDParam(r)
 
 	rows, err := h.DB.Query(`
-		SELECT id, team_id, name, start_date, end_date, all_worklogs, created_at, updated_at
+		SELECT id, team_id, name, start_date, end_date, all_worklogs,
+		       auto_refresh_enabled, auto_refresh_time, next_run_at,
+		       last_auto_refreshed_at, last_auto_refresh_status, last_auto_refresh_msg,
+		       created_at, updated_at
 		FROM jira_snapshots 
 		WHERE team_id = ? 
 		ORDER BY created_at DESC
@@ -194,13 +233,29 @@ func (h *JiraHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var s models.JiraSnapshot
 		var createdAt, updatedAt string
-		err := rows.Scan(&s.ID, &s.TeamID, &s.Name, &s.StartDate, &s.EndDate, &s.AllWorklogs, &createdAt, &updatedAt)
+		var nextRunAt, lastAutoRefreshedAt sql.NullString
+		err := rows.Scan(
+			&s.ID, &s.TeamID, &s.Name, &s.StartDate, &s.EndDate, &s.AllWorklogs,
+			&s.AutoRefreshEnabled, &s.AutoRefreshTime, &nextRunAt,
+			&lastAutoRefreshedAt, &s.LastAutoRefreshStatus, &s.LastAutoRefreshMsg,
+			&createdAt, &updatedAt,
+		)
 		if err != nil {
 			respondErr(w, 500, err.Error())
 			return
 		}
-		s.CreatedAt, _ = time.Parse("2006-01-02T15:04:05Z", createdAt)
-		s.UpdatedAt, _ = time.Parse("2006-01-02T15:04:05Z", updatedAt)
+		if t := parseDBTime(createdAt); t != nil {
+			s.CreatedAt = *t
+		}
+		if t := parseDBTime(updatedAt); t != nil {
+			s.UpdatedAt = *t
+		}
+		if nextRunAt.Valid {
+			s.NextRunAt = parseDBTime(nextRunAt.String)
+		}
+		if lastAutoRefreshedAt.Valid {
+			s.LastAutoRefreshedAt = parseDBTime(lastAutoRefreshedAt.String)
+		}
 		list = append(list, s)
 	}
 	if list == nil {
@@ -219,18 +274,37 @@ func (h *JiraHandler) fetchSnapshot(teamID, id string) (*models.JiraSnapshot, in
 	var s models.JiraSnapshot
 	var dataStr string
 	var createdAt, updatedAt string
+	var nextRunAt, lastAutoRefreshedAt sql.NullString
 	err := h.DB.QueryRow(`
-		SELECT id, team_id, name, start_date, end_date, all_worklogs, data, created_at, updated_at
+		SELECT id, team_id, name, start_date, end_date, all_worklogs, data,
+		       auto_refresh_enabled, auto_refresh_time, next_run_at,
+		       last_auto_refreshed_at, last_auto_refresh_status, last_auto_refresh_msg,
+		       created_at, updated_at
 		FROM jira_snapshots 
 		WHERE id = ? AND team_id = ?
-	`, id, teamID).Scan(&s.ID, &s.TeamID, &s.Name, &s.StartDate, &s.EndDate, &s.AllWorklogs, &dataStr, &createdAt, &updatedAt)
+	`, id, teamID).Scan(
+		&s.ID, &s.TeamID, &s.Name, &s.StartDate, &s.EndDate, &s.AllWorklogs, &dataStr,
+		&s.AutoRefreshEnabled, &s.AutoRefreshTime, &nextRunAt,
+		&lastAutoRefreshedAt, &s.LastAutoRefreshStatus, &s.LastAutoRefreshMsg,
+		&createdAt, &updatedAt,
+	)
 	if err == sql.ErrNoRows {
 		return nil, 404, fmt.Errorf("snapshot not found")
 	} else if err != nil {
 		return nil, 500, err
 	}
-	s.CreatedAt, _ = time.Parse("2006-01-02T15:04:05Z", createdAt)
-	s.UpdatedAt, _ = time.Parse("2006-01-02T15:04:05Z", updatedAt)
+	if t := parseDBTime(createdAt); t != nil {
+		s.CreatedAt = *t
+	}
+	if t := parseDBTime(updatedAt); t != nil {
+		s.UpdatedAt = *t
+	}
+	if nextRunAt.Valid {
+		s.NextRunAt = parseDBTime(nextRunAt.String)
+	}
+	if lastAutoRefreshedAt.Valid {
+		s.LastAutoRefreshedAt = parseDBTime(lastAutoRefreshedAt.String)
+	}
 
 	var parsedData models.JiraSnapshotData
 	if err := json.Unmarshal([]byte(dataStr), &parsedData); err == nil {
@@ -567,21 +641,24 @@ func (h *JiraHandler) UpdateSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name      string `json:"name"`
-		StartDate string `json:"start_date"`
-		EndDate   string `json:"end_date"`
+		Name               string  `json:"name"`
+		StartDate          string  `json:"start_date"`
+		EndDate            string  `json:"end_date"`
+		AutoRefreshEnabled *bool   `json:"auto_refresh_enabled"`
+		AutoRefreshTime    *string `json:"auto_refresh_time"`
 	}
 	if err := decode(r, &body); err != nil || body.Name == "" || body.StartDate == "" || body.EndDate == "" {
 		respondErr(w, 400, "name, start_date, and end_date are required")
 		return
 	}
 
-	var oldName, oldStartDate, oldEndDate, oldDataStr string
-	var allWorklogs bool
+	var oldName, oldStartDate, oldEndDate, oldDataStr, oldAutoRefreshTime string
+	var allWorklogs, oldAutoRefreshEnabled bool
 	err := h.DB.QueryRow(`
-		SELECT name, start_date, end_date, all_worklogs, data FROM jira_snapshots 
+		SELECT name, start_date, end_date, all_worklogs, data, auto_refresh_enabled, auto_refresh_time
+		FROM jira_snapshots 
 		WHERE id = ? AND team_id = ?
-	`, id, teamID).Scan(&oldName, &oldStartDate, &oldEndDate, &allWorklogs, &oldDataStr)
+	`, id, teamID).Scan(&oldName, &oldStartDate, &oldEndDate, &allWorklogs, &oldDataStr, &oldAutoRefreshEnabled, &oldAutoRefreshTime)
 	if err == sql.ErrNoRows {
 		respondErr(w, 404, "snapshot not found")
 		return
@@ -633,18 +710,42 @@ func (h *JiraHandler) UpdateSnapshot(w http.ResponseWriter, r *http.Request) {
 		dataJson = &s
 	}
 
+	autoRefreshEnabled := oldAutoRefreshEnabled
+	if body.AutoRefreshEnabled != nil {
+		autoRefreshEnabled = *body.AutoRefreshEnabled
+	}
+	autoRefreshTime := oldAutoRefreshTime
+	if body.AutoRefreshTime != nil && strings.TrimSpace(*body.AutoRefreshTime) != "" {
+		autoRefreshTime = strings.TrimSpace(*body.AutoRefreshTime)
+	}
+	if autoRefreshTime == "" {
+		autoRefreshTime = "09:00"
+	}
+
+	var nextRunAtVal sql.NullString
+	if autoRefreshEnabled {
+		nextRun := scheduler.CalculateNextRun(autoRefreshTime, time.Now())
+		nextRunAtVal = sql.NullString{String: nextRun.Format("2006-01-02 15:04:05"), Valid: true}
+	}
+
 	if dataJson != nil {
 		_, err = h.DB.Exec(`
 			UPDATE jira_snapshots 
-			SET name = ?, start_date = ?, end_date = ?, data = ?, updated_at = CURRENT_TIMESTAMP
+			SET name = ?, start_date = ?, end_date = ?, data = ?,
+			    auto_refresh_enabled = ?, auto_refresh_time = ?, next_run_at = ?,
+			    updated_at = CURRENT_TIMESTAMP
 			WHERE id = ? AND team_id = ?
-		`, body.Name, body.StartDate, body.EndDate, *dataJson, id, teamID)
+		`, body.Name, body.StartDate, body.EndDate, *dataJson,
+			autoRefreshEnabled, autoRefreshTime, nextRunAtVal, id, teamID)
 	} else {
 		_, err = h.DB.Exec(`
 			UPDATE jira_snapshots 
-			SET name = ?, updated_at = CURRENT_TIMESTAMP
+			SET name = ?, start_date = ?, end_date = ?,
+			    auto_refresh_enabled = ?, auto_refresh_time = ?, next_run_at = ?,
+			    updated_at = CURRENT_TIMESTAMP
 			WHERE id = ? AND team_id = ?
-		`, body.Name, id, teamID)
+		`, body.Name, body.StartDate, body.EndDate,
+			autoRefreshEnabled, autoRefreshTime, nextRunAtVal, id, teamID)
 	}
 
 	if err != nil {
@@ -718,5 +819,559 @@ func (h *JiraHandler) ToggleIssuePlanned(w http.ResponseWriter, r *http.Request)
 	}
 
 	h.GetSnapshotByID(w, r, teamID, snapshotID)
+}
+
+func (h *JiraHandler) ExecuteAutoRefresh(teamID, snapshotID, triggerType string) (*models.JiraAutoRefreshAudit, error) {
+	startTime := time.Now()
+
+	var name, startDate, endDate, autoRefreshTime string
+	var enabled bool
+	err := h.DB.QueryRow(`
+		SELECT name, start_date, end_date, auto_refresh_enabled, auto_refresh_time
+		FROM jira_snapshots
+		WHERE id = ? AND team_id = ?
+	`, snapshotID, teamID).Scan(&name, &startDate, &endDate, &enabled, &autoRefreshTime)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot not found: %w", err)
+	}
+
+	isActive, dateStatus := scheduler.IsSnapshotActive(startDate, endDate, startTime)
+
+	// Refresh only between active dates and not after this
+	if triggerType == "scheduled" && !isActive {
+		msg := fmt.Sprintf("Auto-refresh skipped: snapshot active window is %s to %s (currently %s)", startDate, endDate, dateStatus)
+		nextRun := scheduler.CalculateNextRun(autoRefreshTime, startTime)
+
+		auditID := uuid.NewString()
+		_, _ = h.DB.Exec(`
+			INSERT INTO jira_auto_refresh_audits (
+				id, snapshot_id, team_id, triggered_at, trigger_type, status, message, duration_ms
+			) VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, 'skipped', ?, 0)
+		`, auditID, snapshotID, teamID, triggerType, msg)
+
+		_, _ = h.DB.Exec(`
+			UPDATE jira_snapshots
+			SET last_auto_refresh_status = 'skipped',
+			    last_auto_refresh_msg = ?,
+			    next_run_at = ?
+			WHERE id = ? AND team_id = ?
+		`, msg, nextRun.Format("2006-01-02 15:04:05"), snapshotID, teamID)
+
+		return &models.JiraAutoRefreshAudit{
+			ID:           auditID,
+			SnapshotID:   snapshotID,
+			SnapshotName: name,
+			TeamID:       teamID,
+			TriggeredAt:  startTime,
+			TriggerType:  triggerType,
+			Status:       "skipped",
+			Message:      msg,
+		}, nil
+	}
+
+	snap, _, err := h.executeSnapshotRefresh(teamID, snapshotID)
+	durationMs := time.Since(startTime).Milliseconds()
+	nextRun := scheduler.CalculateNextRun(autoRefreshTime, startTime)
+
+	if err != nil {
+		errMsg := err.Error()
+		auditID := uuid.NewString()
+		_, _ = h.DB.Exec(`
+			INSERT INTO jira_auto_refresh_audits (
+				id, snapshot_id, team_id, triggered_at, trigger_type, status, message, duration_ms
+			) VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, 'failed', ?, ?)
+		`, auditID, snapshotID, teamID, triggerType, errMsg, durationMs)
+
+		_, _ = h.DB.Exec(`
+			UPDATE jira_snapshots
+			SET last_auto_refreshed_at = CURRENT_TIMESTAMP,
+			    last_auto_refresh_status = 'failed',
+			    last_auto_refresh_msg = ?,
+			    next_run_at = ?
+			WHERE id = ? AND team_id = ?
+		`, errMsg, nextRun.Format("2006-01-02 15:04:05"), snapshotID, teamID)
+
+		return &models.JiraAutoRefreshAudit{
+			ID:           auditID,
+			SnapshotID:   snapshotID,
+			SnapshotName: name,
+			TeamID:       teamID,
+			TriggeredAt:  startTime,
+			TriggerType:  triggerType,
+			Status:       "failed",
+			Message:      errMsg,
+			DurationMs:   durationMs,
+		}, err
+	}
+
+	var prevSP, newSP, prevHours, newHours float64
+	var prevIssues, newIssues int
+	if len(snap.RefreshHistory) > 0 {
+		latest := snap.RefreshHistory[0]
+		prevSP = latest.PrevStoryPoints
+		newSP = latest.NewStoryPoints
+		prevHours = latest.PrevHoursLogged
+		newHours = latest.NewHoursLogged
+		prevIssues = latest.PrevIssuesCount
+		newIssues = latest.NewIssuesCount
+	}
+
+	successMsg := fmt.Sprintf("Refreshed successfully (%.1f SP, %.1fh logged)", newSP, newHours)
+	auditID := uuid.NewString()
+	_, _ = h.DB.Exec(`
+		INSERT INTO jira_auto_refresh_audits (
+			id, snapshot_id, team_id, triggered_at, trigger_type, status, message,
+			prev_story_points, new_story_points, prev_hours_logged, new_hours_logged,
+			prev_issues_count, new_issues_count, duration_ms
+		) VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, 'success', ?, ?, ?, ?, ?, ?, ?, ?)
+	`, auditID, snapshotID, teamID, triggerType, successMsg,
+		prevSP, newSP, prevHours, newHours, prevIssues, newIssues, durationMs)
+
+	_, _ = h.DB.Exec(`
+		UPDATE jira_snapshots
+		SET last_auto_refreshed_at = CURRENT_TIMESTAMP,
+		    last_auto_refresh_status = 'success',
+		    last_auto_refresh_msg = ?,
+		    next_run_at = ?
+		WHERE id = ? AND team_id = ?
+	`, successMsg, nextRun.Format("2006-01-02 15:04:05"), snapshotID, teamID)
+
+	return &models.JiraAutoRefreshAudit{
+		ID:              auditID,
+		SnapshotID:      snapshotID,
+		SnapshotName:    name,
+		TeamID:          teamID,
+		TriggeredAt:     startTime,
+		TriggerType:     triggerType,
+		Status:          "success",
+		Message:         successMsg,
+		PrevStoryPoints: prevSP,
+		NewStoryPoints:  newSP,
+		PrevHoursLogged: prevHours,
+		NewHoursLogged:  newHours,
+		PrevIssuesCount: prevIssues,
+		NewIssuesCount:  newIssues,
+		DurationMs:      durationMs,
+	}, nil
+}
+
+func (h *JiraHandler) UpdateAutoRefreshSettings(w http.ResponseWriter, r *http.Request) {
+	teamID := teamIDParam(r)
+	snapshotID := chi.URLParam(r, "snapshotID")
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil || !h.Auth.IsTeamAdmin(user.ID, teamID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	var body struct {
+		Enabled bool   `json:"auto_refresh_enabled"`
+		Time    string `json:"auto_refresh_time"`
+	}
+	if err := decode(r, &body); err != nil {
+		respondErr(w, 400, "invalid body")
+		return
+	}
+	if body.Time == "" {
+		body.Time = "09:00"
+	}
+
+	now := time.Now()
+	var nextRunAtVal sql.NullString
+	if body.Enabled {
+		nextRun := scheduler.CalculateNextRun(body.Time, now)
+		nextRunAtVal = sql.NullString{String: nextRun.Format("2006-01-02 15:04:05"), Valid: true}
+	}
+
+	res, err := h.DB.Exec(`
+		UPDATE jira_snapshots
+		SET auto_refresh_enabled = ?,
+		    auto_refresh_time = ?,
+		    next_run_at = ?,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND team_id = ?
+	`, body.Enabled, body.Time, nextRunAtVal, snapshotID, teamID)
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		respondErr(w, 404, "snapshot not found")
+		return
+	}
+
+	var actionMsg string
+	if body.Enabled {
+		actionMsg = fmt.Sprintf("Auto-refresh enabled (Daily at %s) by %s", body.Time, user.Username)
+	} else {
+		actionMsg = fmt.Sprintf("Auto-refresh disabled by %s", user.Username)
+	}
+	auditID := uuid.NewString()
+	triggerType := "enabled"
+	if !body.Enabled {
+		triggerType = "disabled"
+	}
+	_, _ = h.DB.Exec(`
+		INSERT INTO jira_auto_refresh_audits (
+			id, snapshot_id, team_id, triggered_at, trigger_type, status, message
+		) VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, 'skipped', ?)
+	`, auditID, snapshotID, teamID, triggerType, actionMsg)
+
+	h.GetSnapshotByID(w, r, teamID, snapshotID)
+}
+
+func (h *JiraHandler) DisableAutoRefresh(w http.ResponseWriter, r *http.Request) {
+	teamID := teamIDParam(r)
+	snapshotID := chi.URLParam(r, "snapshotID")
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil || !h.Auth.IsTeamAdmin(user.ID, teamID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	msg := "Disabled by " + user.Username
+	res, err := h.DB.Exec(`
+		UPDATE jira_snapshots
+		SET auto_refresh_enabled = 0,
+		    last_auto_refresh_msg = ?,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND team_id = ?
+	`, msg, snapshotID, teamID)
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		respondErr(w, 404, "snapshot not found")
+		return
+	}
+
+	auditID := uuid.NewString()
+	_, _ = h.DB.Exec(`
+		INSERT INTO jira_auto_refresh_audits (
+			id, snapshot_id, team_id, triggered_at, trigger_type, status, message
+		) VALUES (?, ?, ?, CURRENT_TIMESTAMP, 'disabled', 'skipped', ?)
+	`, auditID, snapshotID, teamID, "Auto-refresh disabled by "+user.Username)
+
+	respond(w, 200, map[string]any{"ok": true, "disabled": true})
+}
+
+func (h *JiraHandler) RunAutoRefreshNow(w http.ResponseWriter, r *http.Request) {
+	teamID := teamIDParam(r)
+	snapshotID := chi.URLParam(r, "snapshotID")
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil || !h.Auth.IsTeamAdmin(user.ID, teamID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	audit, err := h.ExecuteAutoRefresh(teamID, snapshotID, "manual")
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+	respond(w, 200, map[string]any{"ok": true, "audit": audit})
+}
+
+func (h *JiraHandler) GetTeamAutoRefreshJobs(w http.ResponseWriter, r *http.Request) {
+	teamID := teamIDParam(r)
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil || !h.Auth.IsTeamAdmin(user.ID, teamID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	var tName, jiraURL, jiraUser, jiraToken string
+	err := h.DB.QueryRow(`SELECT name, jira_url, jira_user, jira_token FROM teams WHERE id = ?`, teamID).
+		Scan(&tName, &jiraURL, &jiraUser, &jiraToken)
+	if err != nil {
+		respondErr(w, 404, "team not found")
+		return
+	}
+	jiraConfigured := (jiraURL != "" && jiraUser != "" && jiraToken != "")
+
+	rows, err := h.DB.Query(`
+		SELECT id, team_id, name, start_date, end_date,
+		       auto_refresh_enabled, auto_refresh_time, next_run_at,
+		       last_auto_refreshed_at, last_auto_refresh_status, last_auto_refresh_msg
+		FROM jira_snapshots
+		WHERE team_id = ?
+		ORDER BY auto_refresh_enabled DESC, created_at DESC
+	`, teamID)
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	now := time.Now()
+	var jobs []models.AutoRefreshJobInfo
+	for rows.Next() {
+		var job models.AutoRefreshJobInfo
+		job.TeamID = teamID
+		job.TeamName = tName
+		job.JiraConfigured = jiraConfigured
+
+		var nextRunAt, lastAutoRefreshedAt sql.NullString
+		err := rows.Scan(
+			&job.SnapshotID, &job.TeamID, &job.SnapshotName, &job.StartDate, &job.EndDate,
+			&job.AutoRefreshEnabled, &job.AutoRefreshTime, &nextRunAt,
+			&lastAutoRefreshedAt, &job.LastAutoRefreshStatus, &job.LastAutoRefreshMsg,
+		)
+		if err != nil {
+			respondErr(w, 500, err.Error())
+			return
+		}
+		if nextRunAt.Valid {
+			job.NextRunAt = parseDBTime(nextRunAt.String)
+		}
+		if lastAutoRefreshedAt.Valid {
+			job.LastAutoRefreshedAt = parseDBTime(lastAutoRefreshedAt.String)
+		}
+		job.IsActive, job.DateStatus = scheduler.IsSnapshotActive(job.StartDate, job.EndDate, now)
+		jobs = append(jobs, job)
+	}
+	if jobs == nil {
+		jobs = []models.AutoRefreshJobInfo{}
+	}
+	respond(w, 200, jobs)
+}
+
+func (h *JiraHandler) GetTeamAutoRefreshAudits(w http.ResponseWriter, r *http.Request) {
+	teamID := teamIDParam(r)
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil || !h.Auth.IsTeamAdmin(user.ID, teamID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	snapshotID := r.URL.Query().Get("snapshot_id")
+	var rows *sql.Rows
+	var err error
+
+	if snapshotID != "" {
+		rows, err = h.DB.Query(`
+			SELECT a.id, a.snapshot_id, s.name, a.team_id, t.name, a.triggered_at,
+			       a.trigger_type, a.status, a.message, a.prev_story_points, a.new_story_points,
+			       a.prev_hours_logged, a.new_hours_logged, a.prev_issues_count, a.new_issues_count, a.duration_ms
+			FROM jira_auto_refresh_audits a
+			JOIN jira_snapshots s ON a.snapshot_id = s.id
+			JOIN teams t ON a.team_id = t.id
+			WHERE a.team_id = ? AND a.snapshot_id = ?
+			ORDER BY a.triggered_at DESC
+			LIMIT 100
+		`, teamID, snapshotID)
+	} else {
+		rows, err = h.DB.Query(`
+			SELECT a.id, a.snapshot_id, s.name, a.team_id, t.name, a.triggered_at,
+			       a.trigger_type, a.status, a.message, a.prev_story_points, a.new_story_points,
+			       a.prev_hours_logged, a.new_hours_logged, a.prev_issues_count, a.new_issues_count, a.duration_ms
+			FROM jira_auto_refresh_audits a
+			JOIN jira_snapshots s ON a.snapshot_id = s.id
+			JOIN teams t ON a.team_id = t.id
+			WHERE a.team_id = ?
+			ORDER BY a.triggered_at DESC
+			LIMIT 100
+		`, teamID)
+	}
+
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	var audits []models.JiraAutoRefreshAudit
+	for rows.Next() {
+		var a models.JiraAutoRefreshAudit
+		var triggeredAtStr string
+		err := rows.Scan(
+			&a.ID, &a.SnapshotID, &a.SnapshotName, &a.TeamID, &a.TeamName, &triggeredAtStr,
+			&a.TriggerType, &a.Status, &a.Message, &a.PrevStoryPoints, &a.NewStoryPoints,
+			&a.PrevHoursLogged, &a.NewHoursLogged, &a.PrevIssuesCount, &a.NewIssuesCount, &a.DurationMs,
+		)
+		if err != nil {
+			respondErr(w, 500, err.Error())
+			return
+		}
+		if t := parseDBTime(triggeredAtStr); t != nil {
+			a.TriggeredAt = *t
+		}
+		audits = append(audits, a)
+	}
+	if audits == nil {
+		audits = []models.JiraAutoRefreshAudit{}
+	}
+	respond(w, 200, audits)
+}
+
+func (h *JiraHandler) GetAllAutoRefreshJobs(w http.ResponseWriter, r *http.Request) {
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil || !IsSuperAdmin(user) {
+		respondErr(w, http.StatusForbidden, "super admin required")
+		return
+	}
+
+	rows, err := h.DB.Query(`
+		SELECT s.id, s.team_id, s.name, t.name, s.start_date, s.end_date,
+		       s.auto_refresh_enabled, s.auto_refresh_time, s.next_run_at,
+		       s.last_auto_refreshed_at, s.last_auto_refresh_status, s.last_auto_refresh_msg,
+		       t.jira_url, t.jira_user, t.jira_token
+		FROM jira_snapshots s
+		JOIN teams t ON s.team_id = t.id
+		ORDER BY s.auto_refresh_enabled DESC, t.name ASC, s.name ASC
+	`)
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	now := time.Now()
+	var jobs []models.AutoRefreshJobInfo
+	for rows.Next() {
+		var job models.AutoRefreshJobInfo
+		var nextRunAt, lastAutoRefreshedAt sql.NullString
+		var jURL, jUser, jToken string
+		err := rows.Scan(
+			&job.SnapshotID, &job.TeamID, &job.SnapshotName, &job.TeamName, &job.StartDate, &job.EndDate,
+			&job.AutoRefreshEnabled, &job.AutoRefreshTime, &nextRunAt,
+			&lastAutoRefreshedAt, &job.LastAutoRefreshStatus, &job.LastAutoRefreshMsg,
+			&jURL, &jUser, &jToken,
+		)
+		if err != nil {
+			respondErr(w, 500, err.Error())
+			return
+		}
+		if nextRunAt.Valid {
+			job.NextRunAt = parseDBTime(nextRunAt.String)
+		}
+		if lastAutoRefreshedAt.Valid {
+			job.LastAutoRefreshedAt = parseDBTime(lastAutoRefreshedAt.String)
+		}
+		job.JiraConfigured = (jURL != "" && jUser != "" && jToken != "")
+		job.IsActive, job.DateStatus = scheduler.IsSnapshotActive(job.StartDate, job.EndDate, now)
+		jobs = append(jobs, job)
+	}
+	if jobs == nil {
+		jobs = []models.AutoRefreshJobInfo{}
+	}
+	respond(w, 200, jobs)
+}
+
+func (h *JiraHandler) GetAllAutoRefreshAudits(w http.ResponseWriter, r *http.Request) {
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil || !IsSuperAdmin(user) {
+		respondErr(w, http.StatusForbidden, "super admin required")
+		return
+	}
+
+	rows, err := h.DB.Query(`
+		SELECT a.id, a.snapshot_id, s.name, a.team_id, t.name, a.triggered_at,
+		       a.trigger_type, a.status, a.message, a.prev_story_points, a.new_story_points,
+		       a.prev_hours_logged, a.new_hours_logged, a.prev_issues_count, a.new_issues_count, a.duration_ms
+		FROM jira_auto_refresh_audits a
+		JOIN jira_snapshots s ON a.snapshot_id = s.id
+		JOIN teams t ON a.team_id = t.id
+		ORDER BY a.triggered_at DESC
+		LIMIT 200
+	`)
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	var audits []models.JiraAutoRefreshAudit
+	for rows.Next() {
+		var a models.JiraAutoRefreshAudit
+		var triggeredAtStr string
+		err := rows.Scan(
+			&a.ID, &a.SnapshotID, &a.SnapshotName, &a.TeamID, &a.TeamName, &triggeredAtStr,
+			&a.TriggerType, &a.Status, &a.Message, &a.PrevStoryPoints, &a.NewStoryPoints,
+			&a.PrevHoursLogged, &a.NewHoursLogged, &a.PrevIssuesCount, &a.NewIssuesCount, &a.DurationMs,
+		)
+		if err != nil {
+			respondErr(w, 500, err.Error())
+			return
+		}
+		if t := parseDBTime(triggeredAtStr); t != nil {
+			a.TriggeredAt = *t
+		}
+		audits = append(audits, a)
+	}
+	if audits == nil {
+		audits = []models.JiraAutoRefreshAudit{}
+	}
+	respond(w, 200, audits)
+}
+
+func (h *JiraHandler) SuperAdminDisableAutoRefresh(w http.ResponseWriter, r *http.Request) {
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil || !IsSuperAdmin(user) {
+		respondErr(w, http.StatusForbidden, "super admin required")
+		return
+	}
+
+	snapshotID := chi.URLParam(r, "snapshotID")
+	var teamID, snapName string
+	err := h.DB.QueryRow(`SELECT team_id, name FROM jira_snapshots WHERE id = ?`, snapshotID).Scan(&teamID, &snapName)
+	if err == sql.ErrNoRows {
+		respondErr(w, 404, "snapshot not found")
+		return
+	} else if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+
+	msg := "Auto-refresh disabled by superadmin " + user.Username
+	_, err = h.DB.Exec(`
+		UPDATE jira_snapshots
+		SET auto_refresh_enabled = 0,
+		    last_auto_refresh_msg = ?,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, msg, snapshotID)
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+
+	auditID := uuid.NewString()
+	_, _ = h.DB.Exec(`
+		INSERT INTO jira_auto_refresh_audits (
+			id, snapshot_id, team_id, triggered_at, trigger_type, status, message
+		) VALUES (?, ?, ?, CURRENT_TIMESTAMP, 'disabled', 'skipped', ?)
+	`, auditID, snapshotID, teamID, msg)
+
+	respond(w, 200, map[string]any{"ok": true, "disabled": true, "snapshot_id": snapshotID})
+}
+
+func (h *JiraHandler) SuperAdminRunAutoRefresh(w http.ResponseWriter, r *http.Request) {
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil || !IsSuperAdmin(user) {
+		respondErr(w, http.StatusForbidden, "super admin required")
+		return
+	}
+
+	snapshotID := chi.URLParam(r, "snapshotID")
+	var teamID string
+	err := h.DB.QueryRow(`SELECT team_id FROM jira_snapshots WHERE id = ?`, snapshotID).Scan(&teamID)
+	if err == sql.ErrNoRows {
+		respondErr(w, 404, "snapshot not found")
+		return
+	} else if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+
+	audit, err := h.ExecuteAutoRefresh(teamID, snapshotID, "manual")
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+	respond(w, 200, map[string]any{"ok": true, "audit": audit})
 }
 

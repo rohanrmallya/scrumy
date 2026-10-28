@@ -259,9 +259,52 @@ export interface JiraSnapshot {
 	end_date: string;
 	all_worklogs: boolean;
 	data: JiraSnapshotData;
+	auto_refresh_enabled?: boolean;
+	auto_refresh_time?: string;
+	next_run_at?: string;
+	last_auto_refreshed_at?: string;
+	last_auto_refresh_status?: string;
+	last_auto_refresh_msg?: string;
 	created_at: string;
 	updated_at: string;
 	refresh_history?: JiraSnapshotRefresh[];
+}
+
+export interface JiraAutoRefreshAudit {
+	id: string;
+	snapshot_id: string;
+	snapshot_name?: string;
+	team_id: string;
+	team_name?: string;
+	triggered_at: string;
+	trigger_type: 'scheduled' | 'manual' | 'disabled' | 'enabled';
+	status: 'success' | 'failed' | 'skipped';
+	message: string;
+	prev_story_points: number;
+	new_story_points: number;
+	prev_hours_logged: number;
+	new_hours_logged: number;
+	prev_issues_count: number;
+	new_issues_count: number;
+	duration_ms: number;
+}
+
+export interface AutoRefreshJobInfo {
+	snapshot_id: string;
+	snapshot_name: string;
+	team_id: string;
+	team_name: string;
+	start_date: string;
+	end_date: string;
+	is_active: boolean;
+	date_status: 'active' | 'upcoming' | 'expired';
+	auto_refresh_enabled: boolean;
+	auto_refresh_time: string;
+	next_run_at?: string;
+	last_auto_refreshed_at?: string;
+	last_auto_refresh_status?: string;
+	last_auto_refresh_msg?: string;
+	jira_configured: boolean;
 }
 
 export interface JiraSettings {
@@ -313,6 +356,12 @@ export const api = {
 	admin: {
 		refreshAllSnapshots: () => post<BulkRefreshResponse>('/admin/snapshots/refresh-all'),
 		addAdminToAllTeams: (username: string) => post<BulkAddAdminResponse>('/admin/teams/add-admin', { username }),
+		getAutoRefreshJobs: () => get<AutoRefreshJobInfo[]>('/admin/auto-refresh/jobs'),
+		getAutoRefreshAudits: () => get<JiraAutoRefreshAudit[]>('/admin/auto-refresh/audits'),
+		disableAutoRefresh: (snapshotID: string) =>
+			post<{ ok: boolean; disabled: boolean; snapshot_id: string }>(`/admin/snapshots/${snapshotID}/auto-refresh/disable`),
+		runAutoRefresh: (snapshotID: string) =>
+			post<{ ok: boolean; audit: JiraAutoRefreshAudit }>(`/admin/snapshots/${snapshotID}/auto-refresh/run`),
 	},
 	capacity: {
 		list: (teamID: string) => get<CapacityPlan[]>(`/teams/${teamID}/capacity`),
@@ -343,14 +392,23 @@ export const api = {
 	jira: {
 		saveSettings: (teamID: string, settings: JiraSettings) => put<{ updated: boolean }>(`/teams/${teamID}/jira/settings`, settings),
 		testConnection: (teamID: string, settings: Partial<JiraSettings>) => post<{ ok: boolean }>(`/teams/${teamID}/jira/test-connection`, settings),
-		createSnapshot: (teamID: string, body: { name: string; start_date: string; end_date: string; all_worklogs: boolean }) => post<JiraSnapshot>(`/teams/${teamID}/jira/snapshots`, body),
+		createSnapshot: (teamID: string, body: { name: string; start_date: string; end_date: string; all_worklogs: boolean; auto_refresh_enabled?: boolean; auto_refresh_time?: string }) => post<JiraSnapshot>(`/teams/${teamID}/jira/snapshots`, body),
 		listSnapshots: (teamID: string) => get<JiraSnapshot[]>(`/teams/${teamID}/jira/snapshots`),
 		getSnapshot: (teamID: string, id: string) => get<JiraSnapshot>(`/teams/${teamID}/jira/snapshots/${id}`),
-		updateSnapshot: (teamID: string, id: string, body: { name: string; start_date: string; end_date: string }) => put<JiraSnapshot>(`/teams/${teamID}/jira/snapshots/${id}`, body),
+		updateSnapshot: (teamID: string, id: string, body: { name: string; start_date: string; end_date: string; auto_refresh_enabled?: boolean; auto_refresh_time?: string }) => put<JiraSnapshot>(`/teams/${teamID}/jira/snapshots/${id}`, body),
 		refreshSnapshot: (teamID: string, id: string) => post<JiraSnapshot>(`/teams/${teamID}/jira/snapshots/${id}/refresh`),
 		deleteSnapshot: (teamID: string, id: string) => del<{ deleted: boolean }>(`/teams/${teamID}/jira/snapshots/${id}`),
 		toggleIssuePlanned: (teamID: string, snapshotID: string, issueKey: string, is_unplanned?: boolean) =>
 			post<JiraSnapshot>(`/teams/${teamID}/jira/snapshots/${snapshotID}/issues/${issueKey}/toggle-planned`, { is_unplanned }),
+		getAutoRefreshJobs: (teamID: string) => get<AutoRefreshJobInfo[]>(`/teams/${teamID}/jira/auto-refresh/jobs`),
+		getAutoRefreshAudits: (teamID: string, snapshotID?: string) =>
+			get<JiraAutoRefreshAudit[]>(`/teams/${teamID}/jira/auto-refresh/audits${snapshotID ? `?snapshot_id=${encodeURIComponent(snapshotID)}` : ''}`),
+		updateAutoRefresh: (teamID: string, snapshotID: string, body: { auto_refresh_enabled: boolean; auto_refresh_time?: string }) =>
+			put<JiraSnapshot>(`/teams/${teamID}/jira/snapshots/${snapshotID}/auto-refresh`, body),
+		disableAutoRefresh: (teamID: string, snapshotID: string) =>
+			post<{ ok: boolean; disabled: boolean }>(`/teams/${teamID}/jira/snapshots/${snapshotID}/auto-refresh/disable`),
+		runAutoRefresh: (teamID: string, snapshotID: string) =>
+			post<{ ok: boolean; audit: JiraAutoRefreshAudit }>(`/teams/${teamID}/jira/snapshots/${snapshotID}/auto-refresh/run`),
 	},
 	auth: {
 		login: (body: AuthRequest) => post<User>('/auth/login', body),

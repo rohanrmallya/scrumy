@@ -173,6 +173,22 @@
   let modalOnlyChanges = $state(false);
   let modalSortBy = $state<'delta' | 'hours' | 'name'>('delta');
 
+  let editAutoRefreshEnabled = $state(false);
+  let editAutoRefreshTime = $state('09:00');
+  let savingAutoRefresh = $state(false);
+  let runningAutoRefreshNow = $state(false);
+  let autoRefreshNotice = $state('');
+  let autoRefreshError = $state('');
+  let showAutoRefreshModal = $state(false);
+
+  const snapshotActiveStatus = $derived.by(() => {
+    if (!snapshot) return 'unknown';
+    const today = new Date().toISOString().slice(0, 10);
+    if (today < snapshot.start_date) return 'upcoming';
+    if (today > snapshot.end_date) return 'expired';
+    return 'active';
+  });
+
   async function loadData() {
     loading = true;
     error = '';
@@ -188,6 +204,8 @@
         editSnapshotName = s.name;
         editSnapshotStart = s.start_date;
         editSnapshotEnd = s.end_date;
+        editAutoRefreshEnabled = !!s.auto_refresh_enabled;
+        editAutoRefreshTime = s.auto_refresh_time || '09:00';
       }
     } catch (e: any) {
       error = e.message;
@@ -528,8 +546,12 @@
     editSnapshotName = snapshot.name;
     editSnapshotStart = snapshot.start_date;
     editSnapshotEnd = snapshot.end_date;
+    editAutoRefreshEnabled = !!snapshot.auto_refresh_enabled;
+    editAutoRefreshTime = snapshot.auto_refresh_time || '09:00';
     editSnapshotError = '';
     snapshotSaved = false;
+    autoRefreshNotice = '';
+    autoRefreshError = '';
   }
 
   async function saveEditedSnapshot() {
@@ -546,6 +568,8 @@
         name: editSnapshotName.trim(),
         start_date: editSnapshotStart,
         end_date: editSnapshotEnd,
+        auto_refresh_enabled: editAutoRefreshEnabled,
+        auto_refresh_time: editAutoRefreshTime,
       });
       snapshot = updated;
       snapshotSaved = true;
@@ -553,6 +577,51 @@
       editSnapshotError = e.message;
     } finally {
       updatingSnapshot = false;
+    }
+  }
+
+  async function saveAutoRefreshSchedule(enabledVal?: boolean) {
+    if (!snapshot) return;
+    savingAutoRefresh = true;
+    autoRefreshNotice = '';
+    autoRefreshError = '';
+    try {
+      const isEn = enabledVal !== undefined ? enabledVal : editAutoRefreshEnabled;
+      const res = await api.jira.updateAutoRefresh(teamID, snapshot.id, isEn, editAutoRefreshTime);
+      snapshot.auto_refresh_enabled = res.auto_refresh_enabled;
+      snapshot.auto_refresh_time = res.auto_refresh_time;
+      snapshot.next_run_at = res.next_run_at;
+      editAutoRefreshEnabled = res.auto_refresh_enabled;
+      editAutoRefreshTime = res.auto_refresh_time;
+      autoRefreshNotice = isEn ? `✓ Auto-refresh scheduled for ${res.auto_refresh_time} daily` : '✓ Auto-refresh disabled';
+      setTimeout(() => { autoRefreshNotice = ''; }, 4000);
+    } catch (e: any) {
+      autoRefreshError = e.message;
+    } finally {
+      savingAutoRefresh = false;
+    }
+  }
+
+  async function triggerAutoRefreshTest() {
+    if (!snapshot) return;
+    if (!confirm('Run auto-refresh right now? This will record an audit entry and update snapshot data.')) return;
+    runningAutoRefreshNow = true;
+    autoRefreshNotice = '';
+    autoRefreshError = '';
+    try {
+      const res = await api.jira.runAutoRefresh(teamID, snapshot.id);
+      if (res.status === 'success') {
+        autoRefreshNotice = `✓ Auto-refresh executed successfully (${res.duration_ms}ms)`;
+        await loadData();
+      } else if (res.status === 'skipped') {
+        autoRefreshNotice = `ℹ️ Auto-refresh skipped: ${res.message || 'Outside sprint active dates'}`;
+      } else {
+        autoRefreshError = `Auto-refresh ${res.status}: ${res.message || 'Unknown error'}`;
+      }
+    } catch (e: any) {
+      autoRefreshError = e.message;
+    } finally {
+      runningAutoRefreshNow = false;
     }
   }
 
@@ -773,6 +842,28 @@
         </p>
       </div>
       <div class="flex gap-2" style="flex-wrap:wrap;">
+        {#if team?.is_admin}
+          <button
+            onclick={() => { showAutoRefreshModal = true; }}
+            style="display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--c-border-2); border-radius:8px; padding:8px 14px; font-size:13px; font-weight:500; color:var(--c-text);"
+            title="Configure daily automatic refresh"
+          >
+            {#if snapshot.auto_refresh_enabled}
+              <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--c-success);"></span>
+              <span>⏰ Auto-Refresh: {snapshot.auto_refresh_time}</span>
+              {#if snapshotActiveStatus === 'active'}
+                <span class="badge badge-success" style="font-size:10px; padding:1px 6px;">Active</span>
+              {:else if snapshotActiveStatus === 'upcoming'}
+                <span class="badge badge-warning" style="font-size:10px; padding:1px 6px;">Upcoming</span>
+              {:else}
+                <span class="badge badge-secondary" style="font-size:10px; padding:1px 6px;">Expired</span>
+              {/if}
+            {:else}
+              <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--c-text-3);"></span>
+              <span>⏰ Auto-Refresh: Off</span>
+            {/if}
+          </button>
+        {/if}
         <button onclick={exportToCSV} style="display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--c-border-2); border-radius:8px; padding:8px 14px; font-size:13px; font-weight:500; color:var(--c-text);">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Export to CSV
@@ -1605,6 +1696,116 @@
             {/if}
           </div>
         </div>
+        <!-- Auto-Refresh Schedule Card -->
+        <div class="card">
+          <div class="card-header">
+            <div class="flex items-center justify-between" style="width:100%;">
+              <div class="flex items-center gap-2">
+                <span>⏰</span>
+                <h2 class="font-semibold" style="font-size:15px;">Daily Automatic Refresh</h2>
+              </div>
+              <div>
+                {#if snapshot.auto_refresh_enabled}
+                  {#if snapshotActiveStatus === 'active'}
+                    <span class="badge badge-success" style="font-size:11px;">Active Window</span>
+                  {:else if snapshotActiveStatus === 'upcoming'}
+                    <span class="badge badge-warning" style="font-size:11px;">Upcoming</span>
+                  {:else}
+                    <span class="badge badge-secondary" style="font-size:11px;">Expired</span>
+                  {/if}
+                {:else}
+                  <span class="badge badge-secondary" style="font-size:11px;">Disabled</span>
+                {/if}
+              </div>
+            </div>
+          </div>
+          <div class="card-body" style="display:flex; flex-direction:column; gap:16px; padding-top:16px;">
+            <p class="text-xs text-muted" style="margin:0; line-height:1.5;">
+              Automatically queries Jira daily to update sprint worklogs and metrics.
+              <strong>Strict date enforcement:</strong> Auto-refreshes run only while today is within the sprint active date range ({formatSprintRange(snapshot.start_date, snapshot.end_date)}). After the end date, scheduled runs automatically pause.
+            </p>
+
+            <div style="background:var(--c-bg); border:1px solid var(--c-border); border-radius:8px; padding:12px; display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <span class="text-xs text-muted">Current status</span>
+                <span class="text-xs font-semibold" style="display:flex; align-items:center; gap:6px;">
+                  {#if snapshot.auto_refresh_enabled}
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--c-success);"></span>
+                    Enabled daily at {snapshot.auto_refresh_time}
+                  {:else}
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--c-text-3);"></span>
+                    Disabled
+                  {/if}
+                </span>
+              </div>
+              {#if snapshot.next_run_at}
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                  <span class="text-xs text-muted">Next scheduled run</span>
+                  <span class="text-xs font-mono">{formatDateTime(snapshot.next_run_at)}</span>
+                </div>
+              {/if}
+              {#if snapshot.last_auto_refreshed_at}
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                  <span class="text-xs text-muted">Last auto-refresh</span>
+                  <span class="text-xs">
+                    {formatDateTime(snapshot.last_auto_refreshed_at)}
+                    {#if snapshot.last_auto_refresh_status}
+                      <span class="badge {snapshot.last_auto_refresh_status === 'success' ? 'badge-success' : snapshot.last_auto_refresh_status === 'skipped' ? 'badge-warning' : 'badge-danger'}" style="font-size:10px; margin-left:4px;">
+                        {snapshot.last_auto_refresh_status}
+                      </span>
+                    {/if}
+                  </span>
+                </div>
+              {/if}
+            </div>
+
+            {#if team?.is_admin}
+              <div style="display:flex; flex-direction:column; gap:12px;">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:500;">
+                  <input type="checkbox" bind:checked={editAutoRefreshEnabled} style="width:16px; height:16px;" />
+                  <span>Enable daily auto-refresh for this sprint</span>
+                </label>
+
+                {#if editAutoRefreshEnabled}
+                  <div class="form-group" style="max-width:200px;">
+                    <label class="label" style="font-size:11px;" for="setting-auto-refresh-time">Daily refresh time</label>
+                    <input
+                      id="setting-auto-refresh-time"
+                      type="time"
+                      class="input"
+                      bind:value={editAutoRefreshTime}
+                    />
+                  </div>
+                {/if}
+
+                <div class="flex items-center gap-3" style="margin-top:4px;">
+                  <button
+                    class="btn btn-primary btn-sm"
+                    onclick={() => saveAutoRefreshSchedule()}
+                    disabled={savingAutoRefresh}
+                  >
+                    {savingAutoRefresh ? 'Saving…' : 'Save Auto-Refresh Schedule'}
+                  </button>
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    onclick={triggerAutoRefreshTest}
+                    disabled={runningAutoRefreshNow}
+                  >
+                    {runningAutoRefreshNow ? 'Running…' : '⚡ Run Auto-Refresh Now'}
+                  </button>
+                </div>
+              </div>
+            {/if}
+
+            {#if autoRefreshNotice}
+              <p class="text-xs" style="color:var(--c-success); margin:0;">{autoRefreshNotice}</p>
+            {/if}
+            {#if autoRefreshError}
+              <p class="text-xs" style="color:var(--c-danger); margin:0;">⚠️ {autoRefreshError}</p>
+            {/if}
+          </div>
+        </div>
+
         {#if team?.is_admin}
         <!-- Danger zone -->
         <div class="card" style="border-color:#fecaca;">
@@ -1760,6 +1961,102 @@
           </button>
         </div>
 
+      </div>
+    </div>
+  {/if}
+
+  {#if showAutoRefreshModal && snapshot}
+    <div style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:1000; backdrop-filter:blur(4px);">
+      <div style="background:var(--c-surface); border:1px solid var(--c-border); border-radius:12px; width:520px; max-width:92%; display:flex; flex-direction:column; box-shadow:var(--shadow-lg); overflow:hidden;">
+        <!-- Modal Header -->
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:18px 24px; border-bottom:1px solid var(--c-border);">
+          <div>
+            <h3 class="font-bold text-lg" style="margin:0; display:flex; align-items:center; gap:8px;">
+              <span>⏰</span> Auto-Refresh Configuration
+            </h3>
+            <p class="text-xs text-muted" style="margin-top:2px; margin-bottom:0;">
+              {snapshot.name} ({formatSprintRange(snapshot.start_date, snapshot.end_date)})
+            </p>
+          </div>
+          <button class="btn-icon" onclick={() => showAutoRefreshModal = false} style="font-size:16px; width:32px; height:32px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; background:transparent; cursor:pointer;">✕</button>
+        </div>
+
+        <!-- Modal Body -->
+        <div style="padding:20px 24px; display:flex; flex-direction:column; gap:16px;">
+          <!-- Status Banner -->
+          <div style="padding:10px 14px; border-radius:8px; font-size:12px; display:flex; align-items:center; gap:8px; background:var(--c-bg); border:1px solid var(--c-border);">
+            {#if snapshotActiveStatus === 'active'}
+              <span class="badge badge-success" style="font-size:11px;">🟢 Active Sprint</span>
+              <span class="text-muted">Currently eligible for daily auto-refresh.</span>
+            {:else if snapshotActiveStatus === 'upcoming'}
+              <span class="badge badge-warning" style="font-size:11px;">🟡 Upcoming Sprint</span>
+              <span class="text-muted">Auto-refresh will begin once start date ({snapshot.start_date}) arrives.</span>
+            {:else}
+              <span class="badge badge-secondary" style="font-size:11px;">⚪ Expired Sprint</span>
+              <span class="text-muted">Sprint ended on {snapshot.end_date}. Auto-refreshes are stopped.</span>
+            {/if}
+          </div>
+
+          <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:14px; font-weight:500;">
+            <input type="checkbox" bind:checked={editAutoRefreshEnabled} style="width:18px; height:18px;" />
+            <span>Enable daily auto-refresh</span>
+          </label>
+
+          {#if editAutoRefreshEnabled}
+            <div class="form-group" style="margin:0;">
+              <label class="label" style="font-size:12px;" for="modal-auto-time">Daily refresh time</label>
+              <input
+                id="modal-auto-time"
+                type="time"
+                class="input"
+                bind:value={editAutoRefreshTime}
+              />
+              <p class="text-xs text-muted" style="margin-top:4px; margin-bottom:0;">
+                Time of day (server local time) when Scrumy will fetch new logs and metrics from Jira.
+              </p>
+            </div>
+          {/if}
+
+          {#if snapshot.next_run_at}
+            <div style="font-size:12px; color:var(--c-text-2); display:flex; justify-content:space-between;">
+              <span>Next scheduled run:</span>
+              <span class="font-mono">{formatDateTime(snapshot.next_run_at)}</span>
+            </div>
+          {/if}
+
+          {#if autoRefreshNotice}
+            <p class="text-xs" style="color:var(--c-success); margin:0;">{autoRefreshNotice}</p>
+          {/if}
+          {#if autoRefreshError}
+            <p class="text-xs" style="color:var(--c-danger); margin:0;">⚠️ {autoRefreshError}</p>
+          {/if}
+        </div>
+
+        <!-- Modal Footer -->
+        <div style="padding:14px 24px; border-top:1px solid var(--c-border); display:flex; justify-content:space-between; align-items:center; background:var(--c-surface);">
+          <button
+            class="btn btn-secondary btn-sm"
+            onclick={triggerAutoRefreshTest}
+            disabled={runningAutoRefreshNow}
+          >
+            {runningAutoRefreshNow ? 'Running…' : '⚡ Run Now'}
+          </button>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary btn-sm" onclick={() => showAutoRefreshModal = false}>
+              Cancel
+            </button>
+            <button
+              class="btn btn-primary btn-sm"
+              onclick={async () => {
+                await saveAutoRefreshSchedule();
+                if (!autoRefreshError) showAutoRefreshModal = false;
+              }}
+              disabled={savingAutoRefresh}
+            >
+              {savingAutoRefresh ? 'Saving…' : 'Save Settings'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   {/if}

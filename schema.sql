@@ -1,10 +1,34 @@
 -- Scrumy Database Schema
 
 CREATE TABLE IF NOT EXISTS teams (
-    id         TEXT PRIMARY KEY,
-    name       TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    jira_url      TEXT NOT NULL DEFAULT '',
+    jira_user     TEXT NOT NULL DEFAULT '',
+    jira_token    TEXT NOT NULL DEFAULT '',
+    jira_jql      TEXT NOT NULL DEFAULT '',
+    jira_sp_field TEXT NOT NULL DEFAULT '',
+    jira_insecure INTEGER NOT NULL DEFAULT 0,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS jira_snapshots (
+    id                       TEXT PRIMARY KEY,
+    team_id                  TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    name                     TEXT NOT NULL,
+    start_date               TEXT NOT NULL, -- YYYY-MM-DD
+    end_date                 TEXT NOT NULL, -- YYYY-MM-DD
+    all_worklogs             INTEGER NOT NULL DEFAULT 0,
+    data                     TEXT NOT NULL DEFAULT '{}', -- JSON blob
+    auto_refresh_enabled     INTEGER NOT NULL DEFAULT 0,
+    auto_refresh_time        TEXT NOT NULL DEFAULT '09:00',
+    next_run_at              DATETIME,
+    last_auto_refreshed_at   DATETIME,
+    last_auto_refresh_status TEXT NOT NULL DEFAULT '',
+    last_auto_refresh_msg    TEXT NOT NULL DEFAULT '',
+    created_at               DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at               DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS capacity_plans (
@@ -86,11 +110,12 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_capacity_plans_team_id ON capacity_plans(team_id);
 CREATE INDEX IF NOT EXISTS idx_team_members_capacity_plan_id ON team_members(capacity_plan_id);
 CREATE INDEX IF NOT EXISTS idx_sprints_capacity_plan_id ON sprints(capacity_plan_id);
 CREATE INDEX IF NOT EXISTS idx_sprint_leaves_sprint_id ON sprint_leaves(sprint_id);
+CREATE INDEX IF NOT EXISTS idx_capacity_plans_team_id ON capacity_plans(team_id);
 CREATE INDEX IF NOT EXISTS idx_presentations_team_id ON presentations(team_id);
+CREATE INDEX IF NOT EXISTS idx_jira_snapshots_team_id ON jira_snapshots(team_id);
 
 CREATE TABLE IF NOT EXISTS jira_snapshot_refresh_logs (
     id                  TEXT PRIMARY KEY,
@@ -109,3 +134,24 @@ CREATE TABLE IF NOT EXISTS jira_snapshot_refresh_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_jira_snapshot_refresh_logs_snapshot_id ON jira_snapshot_refresh_logs(snapshot_id);
+
+CREATE TABLE IF NOT EXISTS jira_auto_refresh_audits (
+    id                  TEXT PRIMARY KEY,
+    snapshot_id         TEXT NOT NULL REFERENCES jira_snapshots(id) ON DELETE CASCADE,
+    team_id             TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    triggered_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+    trigger_type        TEXT NOT NULL DEFAULT 'scheduled', -- 'scheduled' | 'manual' | 'disabled'
+    status              TEXT NOT NULL, -- 'success' | 'failed' | 'skipped'
+    message             TEXT NOT NULL DEFAULT '',
+    prev_story_points   REAL NOT NULL DEFAULT 0,
+    new_story_points    REAL NOT NULL DEFAULT 0,
+    prev_hours_logged   REAL NOT NULL DEFAULT 0,
+    new_hours_logged    REAL NOT NULL DEFAULT 0,
+    prev_issues_count   INTEGER NOT NULL DEFAULT 0,
+    new_issues_count    INTEGER NOT NULL DEFAULT 0,
+    duration_ms         INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_jira_auto_refresh_audits_snapshot_id ON jira_auto_refresh_audits(snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_jira_auto_refresh_audits_team_id ON jira_auto_refresh_audits(team_id);
+CREATE INDEX IF NOT EXISTS idx_jira_auto_refresh_audits_triggered_at ON jira_auto_refresh_audits(triggered_at);
