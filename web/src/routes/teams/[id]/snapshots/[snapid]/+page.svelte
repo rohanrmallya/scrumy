@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { api, type JiraSnapshot, type Team, type JiraUserRefreshDelta } from '$lib/api';
+  import { user } from '$lib/auth';
 
   const teamID = $derived($page.params.id as string);
   const snapshotID = $derived($page.params.snapid as string);
@@ -555,6 +556,8 @@
     }
   }
 
+  let refreshingAll = $state(false);
+
   async function refreshSnapshot() {
     if (!confirm('Re-fetch snapshot data from Jira?')) return;
     refreshing = true;
@@ -571,6 +574,21 @@
       alert(`Failed to refresh: ${e.message}`);
     } finally {
       refreshing = false;
+    }
+  }
+
+  async function refreshAllSnapshots() {
+    if (!confirm('Refresh snapshots across all projects now?')) return;
+    refreshingAll = true;
+    try {
+      const res = await api.admin.refreshAllSnapshots();
+      const updated = await api.jira.getSnapshot(teamID, snapshotID);
+      snapshot = updated;
+      alert(`All projects snapshot refresh complete: ${res.refreshed} refreshed, ${res.skipped} skipped, ${res.failed} failed out of ${res.total} snapshots.`);
+    } catch (e: any) {
+      alert(`Failed to refresh all snapshots: ${e.message}`);
+    } finally {
+      refreshingAll = false;
     }
   }
 
@@ -760,10 +778,16 @@
           Export to CSV
         </button>
         {#if team?.is_admin}
-          <button onclick={refreshSnapshot} disabled={refreshing} style="display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--c-border-2); border-radius:8px; padding:8px 14px; font-size:13px; font-weight:500; color:var(--c-text);">
+          <button onclick={refreshSnapshot} disabled={refreshing || refreshingAll} style="display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--c-border-2); border-radius:8px; padding:8px 14px; font-size:13px; font-weight:500; color:var(--c-text);">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
             {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
+          {#if $user?.role === 'admin'}
+            <button onclick={refreshAllSnapshots} disabled={refreshing || refreshingAll} style="display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--c-primary); border-radius:8px; padding:8px 14px; font-size:13px; font-weight:500; color:var(--c-primary);" title="Refresh snapshots across all projects">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              {refreshingAll ? 'Refreshing All…' : 'Refresh All Projects'}
+            </button>
+          {/if}
           <button onclick={deleteSnapshot} disabled={deleting} style="display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid #fca5a5; border-radius:8px; padding:8px 18px; font-size:13px; font-weight:500; color:#dc2626;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             {deleting ? 'Deleting...' : 'Delete'}

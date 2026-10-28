@@ -215,7 +215,7 @@ func (h *JiraHandler) GetSnapshot(w http.ResponseWriter, r *http.Request) {
 	h.GetSnapshotByID(w, r, teamID, id)
 }
 
-func (h *JiraHandler) GetSnapshotByID(w http.ResponseWriter, r *http.Request, teamID, id string) {
+func (h *JiraHandler) fetchSnapshot(teamID, id string) (*models.JiraSnapshot, int, error) {
 	var s models.JiraSnapshot
 	var dataStr string
 	var createdAt, updatedAt string
@@ -225,11 +225,9 @@ func (h *JiraHandler) GetSnapshotByID(w http.ResponseWriter, r *http.Request, te
 		WHERE id = ? AND team_id = ?
 	`, id, teamID).Scan(&s.ID, &s.TeamID, &s.Name, &s.StartDate, &s.EndDate, &s.AllWorklogs, &dataStr, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
-		respondErr(w, 404, "snapshot not found")
-		return
+		return nil, 404, fmt.Errorf("snapshot not found")
 	} else if err != nil {
-		respondErr(w, 500, err.Error())
-		return
+		return nil, 500, err
 	}
 	s.CreatedAt, _ = time.Parse("2006-01-02T15:04:05Z", createdAt)
 	s.UpdatedAt, _ = time.Parse("2006-01-02T15:04:05Z", updatedAt)
@@ -251,8 +249,7 @@ func (h *JiraHandler) GetSnapshotByID(w http.ResponseWriter, r *http.Request, te
 		ORDER BY refreshed_at DESC
 	`, id)
 	if err != nil {
-		respondErr(w, 500, err.Error())
-		return
+		return nil, 500, err
 	}
 	defer rows.Close()
 
@@ -266,8 +263,7 @@ func (h *JiraHandler) GetSnapshotByID(w http.ResponseWriter, r *http.Request, te
 			&hr.PrevIssuesCount, &hr.NewIssuesCount, &refreshedAt,
 			&userDeltasStr, &userDeltasAllStr)
 		if err != nil {
-			respondErr(w, 500, err.Error())
-			return
+			return nil, 500, err
 		}
 		hr.RefreshedAt, _ = time.Parse("2006-01-02 15:04:05", refreshedAt)
 		if hr.RefreshedAt.IsZero() {
@@ -295,18 +291,19 @@ func (h *JiraHandler) GetSnapshotByID(w http.ResponseWriter, r *http.Request, te
 	}
 	s.RefreshHistory = history
 
+	return &s, 200, nil
+}
+
+func (h *JiraHandler) GetSnapshotByID(w http.ResponseWriter, r *http.Request, teamID, id string) {
+	s, code, err := h.fetchSnapshot(teamID, id)
+	if err != nil {
+		respondErr(w, code, err.Error())
+		return
+	}
 	respond(w, 200, s)
 }
 
-func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
-	teamID := teamIDParam(r)
-	id := chi.URLParam(r, "snapshotID")
-	user := h.Auth.GetUserFromContext(r.Context())
-	if user == nil || !h.Auth.IsTeamAdmin(user.ID, teamID) {
-		respondErr(w, http.StatusForbidden, "forbidden")
-		return
-	}
-
+func (h *JiraHandler) executeSnapshotRefresh(teamID, id string) (*models.JiraSnapshot, int, error) {
 	var name, startDate, endDate, oldDataStr string
 	var allWorklogs bool
 	err := h.DB.QueryRow(`
@@ -314,11 +311,9 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 		WHERE id = ? AND team_id = ?
 	`, id, teamID).Scan(&name, &startDate, &endDate, &allWorklogs, &oldDataStr)
 	if err == sql.ErrNoRows {
-		respondErr(w, 404, "snapshot not found")
-		return
+		return nil, 404, fmt.Errorf("snapshot not found")
 	} else if err != nil {
-		respondErr(w, 500, err.Error())
-		return
+		return nil, 500, err
 	}
 
 	var oldData models.JiraSnapshotData
@@ -328,14 +323,12 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 
 	client, jql, spField, err := h.getClientForTeam(teamID)
 	if err != nil {
-		respondErr(w, 400, err.Error())
-		return
+		return nil, 400, err
 	}
 
 	data, err := client.FetchRetroData(jql, startDate, endDate, spField)
 	if err != nil {
-		respondErr(w, 500, fmt.Sprintf("failed to refresh data from Jira: %v", err))
-		return
+		return nil, 500, fmt.Errorf("failed to refresh data from Jira: %v", err)
 	}
 
 	// Preserve IsUnplanned from oldData for any matching issue keys
@@ -355,8 +348,7 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		respondErr(w, 500, err.Error())
-		return
+		return nil, 500, err
 	}
 
 	// Calculate changes based on whether the snapshot is configured with all worklogs
@@ -400,8 +392,7 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 	// Update snapshot and write history in a transaction
 	tx, err := h.DB.Begin()
 	if err != nil {
-		respondErr(w, 500, err.Error())
-		return
+		return nil, 500, err
 	}
 	defer tx.Rollback()
 
@@ -411,8 +402,7 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 		WHERE id = ? AND team_id = ?
 	`, string(jsonData), id, teamID)
 	if err != nil {
-		respondErr(w, 500, err.Error())
-		return
+		return nil, 500, err
 	}
 
 	refreshID := uuid.NewString()
@@ -425,16 +415,123 @@ func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
 	`, refreshID, id, prevSP, newSP, prevHours, newHours, prevWorklogs, newWorklogs, prevIssues, newIssues, string(userDeltasJson), string(userDeltasAllJson))
 	if err != nil {
-		respondErr(w, 500, err.Error())
-		return
+		return nil, 500, err
 	}
 
 	if err := tx.Commit(); err != nil {
-		respondErr(w, 500, err.Error())
+		return nil, 500, err
+	}
+
+	return h.fetchSnapshot(teamID, id)
+}
+
+func (h *JiraHandler) RefreshSnapshot(w http.ResponseWriter, r *http.Request) {
+	teamID := teamIDParam(r)
+	id := chi.URLParam(r, "snapshotID")
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil || !h.Auth.IsTeamAdmin(user.ID, teamID) {
+		respondErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
 
-	h.GetSnapshotByID(w, r, teamID, id)
+	s, code, err := h.executeSnapshotRefresh(teamID, id)
+	if err != nil {
+		respondErr(w, code, err.Error())
+		return
+	}
+	respond(w, 200, s)
+}
+
+type SnapshotRefreshResult struct {
+	TeamID       string `json:"team_id"`
+	TeamName     string `json:"team_name"`
+	SnapshotID   string `json:"snapshot_id"`
+	SnapshotName string `json:"snapshot_name"`
+	Status       string `json:"status"` // "refreshed", "skipped", "failed"
+	Error        string `json:"error,omitempty"`
+}
+
+type BulkRefreshResponse struct {
+	Total     int                     `json:"total"`
+	Refreshed int                     `json:"refreshed"`
+	Skipped   int                     `json:"skipped"`
+	Failed    int                     `json:"failed"`
+	Results   []SnapshotRefreshResult `json:"results"`
+}
+
+func (h *JiraHandler) RefreshAllSnapshots(w http.ResponseWriter, r *http.Request) {
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil || !IsSuperAdmin(user) {
+		respondErr(w, http.StatusForbidden, "super admin required")
+		return
+	}
+
+	rows, err := h.DB.Query(`
+		SELECT s.id, s.team_id, s.name, t.name, t.jira_url, t.jira_user, t.jira_token
+		FROM jira_snapshots s
+		JOIN teams t ON s.team_id = t.id
+		ORDER BY t.name ASC, s.created_at DESC
+	`)
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	type snapRow struct {
+		id, teamID, snapName, teamName, jiraURL, jiraUser, jiraToken string
+	}
+	var snapRows []snapRow
+	for rows.Next() {
+		var sr snapRow
+		if err := rows.Scan(&sr.id, &sr.teamID, &sr.snapName, &sr.teamName, &sr.jiraURL, &sr.jiraUser, &sr.jiraToken); err == nil {
+			snapRows = append(snapRows, sr)
+		}
+	}
+
+	resp := BulkRefreshResponse{
+		Total:   len(snapRows),
+		Results: make([]SnapshotRefreshResult, 0, len(snapRows)),
+	}
+
+	for _, sr := range snapRows {
+		if sr.jiraURL == "" || sr.jiraUser == "" || sr.jiraToken == "" {
+			resp.Skipped++
+			resp.Results = append(resp.Results, SnapshotRefreshResult{
+				TeamID:       sr.teamID,
+				TeamName:     sr.teamName,
+				SnapshotID:   sr.id,
+				SnapshotName: sr.snapName,
+				Status:       "skipped",
+				Error:        "Jira integration is not fully configured for this project",
+			})
+			continue
+		}
+
+		_, _, err := h.executeSnapshotRefresh(sr.teamID, sr.id)
+		if err != nil {
+			resp.Failed++
+			resp.Results = append(resp.Results, SnapshotRefreshResult{
+				TeamID:       sr.teamID,
+				TeamName:     sr.teamName,
+				SnapshotID:   sr.id,
+				SnapshotName: sr.snapName,
+				Status:       "failed",
+				Error:        err.Error(),
+			})
+		} else {
+			resp.Refreshed++
+			resp.Results = append(resp.Results, SnapshotRefreshResult{
+				TeamID:       sr.teamID,
+				TeamName:     sr.teamName,
+				SnapshotID:   sr.id,
+				SnapshotName: sr.snapName,
+				Status:       "refreshed",
+			})
+		}
+	}
+
+	respond(w, 200, resp)
 }
 
 func (h *JiraHandler) DeleteSnapshot(w http.ResponseWriter, r *http.Request) {

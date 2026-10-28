@@ -179,6 +179,14 @@ func (h *AuthHandler) RequireAuth(next http.Handler) http.Handler {
 }
 
 func (h *AuthHandler) IsTeamAdmin(userID, teamID string) bool {
+	if userID != "" {
+		var username, role string
+		if err := h.DB.QueryRow("SELECT username, role FROM users WHERE id = ?", userID).Scan(&username, &role); err == nil {
+			if role == "admin" || username == SuperAdminUsername() {
+				return true
+			}
+		}
+	}
 	var count int
 	err := h.DB.QueryRow("SELECT COUNT(*) FROM team_admins WHERE team_id = ? AND user_id = ?", teamID, userID).Scan(&count)
 	return err == nil && count > 0

@@ -273,6 +273,31 @@ export interface JiraSettings {
 	jira_insecure?: boolean;
 }
 
+export interface SnapshotRefreshResult {
+	team_id: string;
+	team_name: string;
+	snapshot_id: string;
+	snapshot_name: string;
+	status: 'refreshed' | 'skipped' | 'failed';
+	error?: string;
+}
+
+export interface BulkRefreshResponse {
+	total: number;
+	refreshed: number;
+	skipped: number;
+	failed: number;
+	results: SnapshotRefreshResult[];
+}
+
+export interface BulkAddAdminResponse {
+	username: string;
+	user_id: string;
+	total_teams: number;
+	added: number;
+	message?: string;
+}
+
 // ─── API calls ────────────────────────────────────────────────────────────────
 export const api = {
 	teams: {
@@ -281,8 +306,13 @@ export const api = {
 		get: (id: string) => get<Team>(`/teams/${id}`),
 		update: (id: string, name: string) => put<Team>(`/teams/${id}`, { name }),
 		delete: (id: string) => del<{ deleted: boolean }>(`/teams/${id}`),
-		addAdmin: (id: string, username: string) => post<{ added: boolean }>(`/teams/${id}/admins`, { username }),
+		addAdmin: (id: string, username: string, options?: { all_teams?: boolean }) =>
+			post<{ added: boolean; total_teams?: number; added_count?: number }>(`/teams/${id}/admins`, { username, all_teams: options?.all_teams }),
 		removeAdmin: (id: string, username: string) => del<{ removed: boolean }>(`/teams/${id}/admins`, { username }),
+	},
+	admin: {
+		refreshAllSnapshots: () => post<BulkRefreshResponse>('/admin/snapshots/refresh-all'),
+		addAdminToAllTeams: (username: string) => post<BulkAddAdminResponse>('/admin/teams/add-admin', { username }),
 	},
 	capacity: {
 		list: (teamID: string) => get<CapacityPlan[]>(`/teams/${teamID}/capacity`),

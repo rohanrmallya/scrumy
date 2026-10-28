@@ -44,6 +44,24 @@
     } catch { return ''; }
   }
 
+  let refreshingAll = $state(false);
+  let adminNotice = $state('');
+
+  async function handleRefreshAllSnapshots() {
+    if (!confirm('Refresh snapshots across all projects now?')) return;
+    refreshingAll = true;
+    adminNotice = '';
+    error = '';
+    try {
+      const res = await api.admin.refreshAllSnapshots();
+      adminNotice = `✓ Refreshed snapshots across all projects: ${res.refreshed} refreshed, ${res.skipped} skipped, ${res.failed} failed out of ${res.total} snapshots.`;
+    } catch (e: any) {
+      error = `Bulk refresh failed: ${e.message}`;
+    } finally {
+      refreshingAll = false;
+    }
+  }
+
   const icons = ['📊', '🚀', '🎯', '⚡', '💡', '🔮', '🛠️', '📈'];
   function teamIcon(id: string) {
     const n = id.charCodeAt(0) % icons.length;
@@ -60,6 +78,44 @@
     <h1 class="text-2xl font-bold" style="margin-bottom:8px;">Agile Teams</h1>
     <p class="text-muted">Browse public teams or sign in to create and manage your own.</p>
   </div>
+
+  {#if $user?.role === 'admin'}
+    <div class="card" style="margin-bottom:24px; background:linear-gradient(135deg, rgba(99, 102, 241, 0.04), rgba(168, 85, 247, 0.04)); border:1px solid rgba(99, 102, 241, 0.2);">
+      <div class="card-body" style="padding:14px 18px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+        <div class="flex items-center gap-2">
+          <span style="font-size:18px;">🛡️</span>
+          <div>
+            <span class="font-semibold" style="font-size:14px;">Superadmin Console</span>
+            <span class="text-xs text-muted" style="margin-left:8px;">Control snapshots and admins across all projects</span>
+          </div>
+        </div>
+        <div class="flex gap-2" style="flex-wrap:wrap;">
+          <button
+            class="btn btn-secondary btn-sm"
+            onclick={handleRefreshAllSnapshots}
+            disabled={refreshingAll}
+            style="display:inline-flex; align-items:center; gap:6px;"
+          >
+            {#if refreshingAll}
+              <span class="spinner" style="width:12px; height:12px;"></span>
+              <span>Refreshing all snapshots…</span>
+            {:else}
+              <span>🔄 Refresh All Project Snapshots</span>
+            {/if}
+          </button>
+          <a href="/admin/users" class="btn btn-primary btn-sm" style="display:inline-flex; align-items:center; gap:6px;">
+            <span>⚡ Bulk Operations & Admins</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if adminNotice}
+    <div class="badge badge-success" style="margin-bottom:16px; padding:10px 16px; border-radius:8px; font-size:13px; text-transform:none; letter-spacing:0; font-weight:400; display:block;">
+      {adminNotice}
+    </div>
+  {/if}
 
   {#if error}
     <div class="badge badge-danger" style="margin-bottom:16px; padding:8px 16px; border-radius:8px; font-size:13px; text-transform:none; letter-spacing:0; font-weight:400;">

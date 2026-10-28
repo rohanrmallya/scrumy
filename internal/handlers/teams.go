@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"scrumy/internal/db"
 	"scrumy/internal/models"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -48,6 +49,8 @@ func (h *TeamsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
+	isSuper := IsSuperAdmin(user)
+
 	var teams []models.Team
 	for rows.Next() {
 		var t models.Team
@@ -55,6 +58,9 @@ func (h *TeamsHandler) List(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&t.ID, &t.Name, &createdAt, &updatedAt, &t.CapacityPlanCount, &t.PresentationCount, &t.IsAdmin); err != nil {
 			respondErr(w, 500, err.Error())
 			return
+		}
+		if isSuper {
+			t.IsAdmin = true
 		}
 		t.CreatedAt, _ = time.Parse("2006-01-02T15:04:05Z", createdAt)
 		t.UpdatedAt, _ = time.Parse("2006-01-02T15:04:05Z", updatedAt)
@@ -141,6 +147,9 @@ func (h *TeamsHandler) GetByID(w http.ResponseWriter, r *http.Request, id string
 		respondErr(w, 500, err.Error())
 		return
 	}
+	if IsSuperAdmin(user) {
+		t.IsAdmin = true
+	}
 	t.CreatedAt, _ = time.Parse("2006-01-02T15:04:05Z", createdAt)
 	t.UpdatedAt, _ = time.Parse("2006-01-02T15:04:05Z", updatedAt)
 	t.JiraTokenSet = (jiraToken != "")
@@ -208,6 +217,94 @@ func (h *TeamsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	h.GetByID(w, r, id)
 }
 
+func (h *TeamsHandler) addAdminToAllTeamsHelper(userID string) (int, int, error) {
+	rows, err := h.DB.Query("SELECT id FROM teams")
+	if err != nil {
+		return 0, 0, err
+	}
+	defer rows.Close()
+
+	var teamIDs []string
+	for rows.Next() {
+		var tid string
+		if err := rows.Scan(&tid); err == nil {
+			teamIDs = append(teamIDs, tid)
+		}
+	}
+
+	if len(teamIDs) == 0 {
+		return 0, 0, nil
+	}
+
+	tx, err := h.DB.Begin()
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare("INSERT OR IGNORE INTO team_admins (team_id, user_id) VALUES (?, ?)")
+	if err != nil {
+		return 0, 0, err
+	}
+	defer stmt.Close()
+
+	addedCount := 0
+	for _, tid := range teamIDs {
+		res, err := stmt.Exec(tid, userID)
+		if err == nil {
+			if affected, _ := res.RowsAffected(); affected > 0 {
+				addedCount++
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, 0, err
+	}
+
+	return len(teamIDs), addedCount, nil
+}
+
+func (h *TeamsHandler) AddAdminToAllTeams(w http.ResponseWriter, r *http.Request) {
+	user := h.Auth.GetUserFromContext(r.Context())
+	if user == nil || !IsSuperAdmin(user) {
+		respondErr(w, http.StatusForbidden, "super admin required")
+		return
+	}
+
+	var body struct {
+		Username string `json:"username"`
+	}
+	if err := decode(r, &body); err != nil || strings.TrimSpace(body.Username) == "" {
+		respondErr(w, 400, "username is required")
+		return
+	}
+	username := strings.TrimSpace(body.Username)
+
+	var targetID, targetUsername string
+	err := h.DB.QueryRow("SELECT id, username FROM users WHERE username = ?", username).Scan(&targetID, &targetUsername)
+	if err == sql.ErrNoRows {
+		respondErr(w, 404, "user not found")
+		return
+	} else if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+
+	total, added, err := h.addAdminToAllTeamsHelper(targetID)
+	if err != nil {
+		respondErr(w, 500, err.Error())
+		return
+	}
+
+	respond(w, 200, map[string]any{
+		"username":    targetUsername,
+		"user_id":     targetID,
+		"total_teams": total,
+		"added":       added,
+	})
+}
+
 func (h *TeamsHandler) AddAdmin(w http.ResponseWriter, r *http.Request) {
 	teamID := teamIDParam(r)
 	user := h.Auth.GetUserFromContext(r.Context())
@@ -218,6 +315,7 @@ func (h *TeamsHandler) AddAdmin(w http.ResponseWriter, r *http.Request) {
 
 	var body struct {
 		Username string `json:"username"`
+		AllTeams bool   `json:"all_teams"`
 	}
 	if err := decode(r, &body); err != nil {
 		respondErr(w, 400, "invalid body")
@@ -231,6 +329,16 @@ func (h *TeamsHandler) AddAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if err != nil {
 		respondErr(w, 500, err.Error())
+		return
+	}
+
+	if body.AllTeams && IsSuperAdmin(user) {
+		total, added, err := h.addAdminToAllTeamsHelper(userID)
+		if err != nil {
+			respondErr(w, 500, err.Error())
+			return
+		}
+		respond(w, 200, map[string]any{"added": true, "total_teams": total, "added_count": added})
 		return
 	}
 

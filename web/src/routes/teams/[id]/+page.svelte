@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { api, type Team, type CapacityPlan, type Presentation, type JiraSnapshot, type JiraSettings, type Sprint } from '$lib/api';
+  import { user } from '$lib/auth';
 
   const teamID = $derived($page.params.id);
 
@@ -238,7 +239,7 @@
     team = await api.teams.get(teamID);
   }
 
-  async function addAdminByUsername(username: string) {
+  async function addAdminByUsername(username: string, allProjects: boolean = false) {
     const name = username.trim();
     if (!name || addingUsername) return;
     addingUsername = name;
@@ -246,9 +247,14 @@
     adminError = '';
     adminNotice = '';
     try {
-      await api.teams.addAdmin(teamID, name);
+      if (allProjects) {
+        const res = await api.admin.addAdminToAllTeams(name);
+        adminNotice = `"${name}" added as admin to all ${res.total_teams} projects (${res.added} newly added)`;
+      } else {
+        await api.teams.addAdmin(teamID, name);
+        adminNotice = `"${name}" added as admin`;
+      }
       team = await api.teams.get(teamID);
-      adminNotice = `"${name}" added as admin`;
       newAdminUsername = '';
       adminSearchQuery = '';
       adminSearchResults = [];
@@ -261,10 +267,10 @@
     }
   }
 
-  async function addAdmin() {
+  async function addAdmin(allProjects: boolean = false) {
     const name = (adminSearchQuery.trim() || newAdminUsername.trim());
     if (!name) return;
-    await addAdminByUsername(name);
+    await addAdminByUsername(name, allProjects);
   }
 
   function onAdminSearchInput(value: string) {
@@ -786,9 +792,14 @@
                   onkeydown={(e) => { if (e.key === 'Enter') addAdmin(); if (e.key === 'Escape') showUserDropdown = false; }}
                   autocomplete="off"
                 />
-                <button class="btn btn-primary btn-sm" style="white-space:nowrap;" onclick={addAdmin} disabled={addingAdmin || !adminSearchQuery.trim()}>
+                <button class="btn btn-primary btn-sm" style="white-space:nowrap;" onclick={() => addAdmin(false)} disabled={addingAdmin || !adminSearchQuery.trim()}>
                   {addingAdmin ? 'Adding…' : 'Add Admin'}
                 </button>
+                {#if $user?.role === 'admin'}
+                  <button class="btn btn-secondary btn-sm" style="white-space:nowrap;" onclick={() => addAdmin(true)} disabled={addingAdmin || !adminSearchQuery.trim()} title="Add this admin to all projects">
+                    Add to All Projects
+                  </button>
+                {/if}
               </div>
               {#if showUserDropdown && adminSearchQuery.trim()}
                 <div style="position:absolute; top:100%; left:0; right:0; z-index:30; background:var(--c-surface); border:1px solid var(--c-border); border-radius:8px; margin-top:4px; box-shadow:var(--shadow-lg); overflow:hidden; max-height:260px; overflow-y:auto;">
@@ -852,15 +863,28 @@
                         <td class="text-sm text-muted">{i + 1}</td>
                         <td class="font-medium" style="font-size:13px;">{admin}</td>
                         <td style="text-align:right;">
-                          <button
-                            class="btn btn-secondary btn-sm"
-                            style="padding:4px 10px; font-size:12px; color:var(--c-danger);"
-                            onclick={() => removeAdmin(admin)}
-                            disabled={removingUsername === admin || currentAdmins.length <= 1}
-                            title={currentAdmins.length <= 1 ? 'Cannot remove the last admin' : `Remove ${admin}`}
-                          >
-                            {removingUsername === admin ? 'Removing…' : 'Remove'}
-                          </button>
+                          <div style="display:inline-flex; align-items:center; gap:6px;">
+                            {#if $user?.role === 'admin'}
+                              <button
+                                class="btn btn-secondary btn-sm"
+                                style="padding:4px 8px; font-size:11px;"
+                                onclick={() => addAdminByUsername(admin, true)}
+                                disabled={addingUsername === admin}
+                                title="Ensure {admin} is an admin on all projects"
+                              >
+                                Apply to All Projects
+                              </button>
+                            {/if}
+                            <button
+                              class="btn btn-secondary btn-sm"
+                              style="padding:4px 10px; font-size:12px; color:var(--c-danger);"
+                              onclick={() => removeAdmin(admin)}
+                              disabled={removingUsername === admin || currentAdmins.length <= 1}
+                              title={currentAdmins.length <= 1 ? 'Cannot remove the last admin' : `Remove ${admin}`}
+                            >
+                              {removingUsername === admin ? 'Removing…' : 'Remove'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     {/each}

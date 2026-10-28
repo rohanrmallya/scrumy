@@ -124,6 +124,13 @@ func main() {
 		r.Put("/users/{userID}/password", usersH.ResetPassword)
 		r.Delete("/users/{userID}", usersH.Delete)
 
+		// Super admin bulk operations
+		r.Group(func(r chi.Router) {
+			r.Use(authH.RequireSuperAdmin)
+			r.Post("/admin/snapshots/refresh-all", jiraH.RefreshAllSnapshots)
+			r.Post("/admin/teams/add-admin", teamsH.AddAdminToAllTeams)
+		})
+
 		// Teams (current) + deprecated /plans aliases for backward compatibility
 		registerTeamRoutes(r, "/teams")
 		registerTeamRoutes(r, "/plans")

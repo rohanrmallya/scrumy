@@ -139,12 +139,15 @@ Users holding the global `admin` role are also treated as super admins (backward
 If the configured super admin username already exists in the database (e.g. upgrading with existing data), startup skips creation — the existing password is left untouched — and the existing user is treated as the superuser (granted the `admin` role if needed).
 
 - **Change password (any logged-in user):** `POST /api/auth/change-password` with `{ current_password, new_password }`, or use the *Change password* link in the navbar.
-- **Super admin user management** (see the *Users* page in the navbar when logged in as an admin):
+- **Super admin project & user management:**
+  - Super admins hold administrator privileges across **all projects automatically**, allowing them to manage Jira configurations, refresh snapshots, and add/remove admins on any project.
   - `GET /api/users` — list users
   - `POST /api/users` — add a user (`{ username, password, role }`, role defaults to `user`)
   - `PUT /api/users/{id}` — change role (`{ role: "admin" | "user" }`)
   - `PUT /api/users/{id}/password` — reset password (`{ new_password }`, no old password needed; signs the user out)
   - `DELETE /api/users/{id}` — delete a user
+  - `POST /api/admin/snapshots/refresh-all` — trigger a Jira snapshot refresh across **all projects**
+  - `POST /api/admin/teams/add-admin` — assign a user as administrator to **all projects** in a single operation (`{ username }`)
 
 The super admin account itself cannot be demoted or deleted, and you cannot delete or demote your own account.
 
