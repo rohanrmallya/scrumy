@@ -22,6 +22,8 @@ const del = <T>(path: string, body?: unknown) => req<T>('DELETE', path, body);
 export interface User {
 	id: string;
 	username: string;
+	email?: string;
+	jira_account_id?: string;
 	role: string;
 	created_at: string;
 }
@@ -29,9 +31,32 @@ export interface User {
 export interface ManagedUser {
 	id: string;
 	username: string;
+	email?: string;
+	jira_account_id?: string;
 	role: string;
 	created_at: string;
 	is_super_admin?: boolean;
+}
+
+export interface TeamMate {
+	id: string;
+	team_id: string;
+	user_id?: string;
+	username?: string;
+	name: string;
+	email: string;
+	jira_account_id?: string;
+	role: string;
+	avatar_url?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface JiraZeroLogMember {
+	name: string;
+	email?: string;
+	jira_account_id?: string;
+	total_hours: number;
 }
 
 export interface UserSearchResult {
@@ -215,6 +240,8 @@ export interface JiraWorklogItem {
 
 export interface JiraLeaderboardEntry {
 	author_name: string;
+	author_account_id?: string;
+	author_email?: string;
 	hours_logged: number;
 	percentage: number;
 	worklogs?: JiraWorklogItem[];
@@ -230,6 +257,8 @@ export interface JiraSnapshotData {
 
 export interface JiraUserRefreshDelta {
 	author_name: string;
+	author_account_id?: string;
+	author_email?: string;
 	prev_hours_logged: number;
 	new_hours_logged: number;
 	hours_delta: number;
@@ -249,6 +278,7 @@ export interface JiraSnapshotRefresh {
 	new_issues_count: number;
 	user_deltas?: JiraUserRefreshDelta[];
 	user_deltas_all?: JiraUserRefreshDelta[];
+	zero_log_members?: JiraZeroLogMember[];
 }
 
 export interface JiraSnapshot {
@@ -352,6 +382,17 @@ export const api = {
 		addAdmin: (id: string, username: string, options?: { all_teams?: boolean }) =>
 			post<{ added: boolean; total_teams?: number; added_count?: number }>(`/teams/${id}/admins`, { username, all_teams: options?.all_teams }),
 		removeAdmin: (id: string, username: string) => del<{ removed: boolean }>(`/teams/${id}/admins`, { username }),
+		mates: {
+			list: (teamID: string) => get<TeamMate[]>(`/teams/${teamID}/mates`),
+			add: (teamID: string, mate: { name: string; email?: string; jira_account_id?: string; role?: string; avatar_url?: string }) =>
+				post<TeamMate>(`/teams/${teamID}/mates`, mate),
+			bulkAdd: (teamID: string, mates: Array<{ name: string; email?: string; jira_account_id?: string; role?: string; avatar_url?: string }>) =>
+				post<{ added_count: number; total_items: number }>(`/teams/${teamID}/mates/bulk`, mates),
+			update: (teamID: string, mateID: string, mate: { name: string; email?: string; jira_account_id?: string; role?: string; avatar_url?: string }) =>
+				put<TeamMate>(`/teams/${teamID}/mates/${mateID}`, mate),
+			delete: (teamID: string, mateID: string) =>
+				del<{ deleted: boolean }>(`/teams/${teamID}/mates/${mateID}`),
+		},
 	},
 	admin: {
 		refreshAllSnapshots: () => post<BulkRefreshResponse>('/admin/snapshots/refresh-all'),
@@ -424,6 +465,7 @@ export const api = {
 		register: (body: AuthRequest) => post<{ id: string }>('/auth/register', body),
 		logout: () => post<{ message: string }>('/auth/logout'),
 		me: () => get<User>('/auth/me'),
+		updateProfile: (body: { email: string }) => put<User>('/auth/profile', body),
 		changePassword: (body: { current_password: string; new_password: string }) =>
 			post<{ message: string }>('/auth/change-password', body),
 	},
