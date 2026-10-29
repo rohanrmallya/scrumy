@@ -94,8 +94,13 @@ CREATE TABLE IF NOT EXISTS users (
     username      TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     role          TEXT NOT NULL DEFAULT 'user', -- admin | user
+    email         TEXT NOT NULL DEFAULT '',
+    jira_account_id TEXT NOT NULL DEFAULT '',
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_jira_account_id ON users(jira_account_id);
 
 CREATE TABLE IF NOT EXISTS team_admins (
     team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
@@ -109,6 +114,24 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at DATETIME NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS team_mates (
+    id              TEXT PRIMARY KEY,
+    team_id         TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    user_id         TEXT REFERENCES users(id) ON DELETE SET NULL,
+    name            TEXT NOT NULL,
+    email           TEXT NOT NULL DEFAULT '',
+    jira_account_id TEXT NOT NULL DEFAULT '',
+    role            TEXT NOT NULL DEFAULT '',
+    avatar_url      TEXT NOT NULL DEFAULT '',
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(team_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_team_mates_team_id ON team_mates(team_id);
+CREATE INDEX IF NOT EXISTS idx_team_mates_user_id ON team_mates(user_id);
+CREATE INDEX IF NOT EXISTS idx_team_mates_email ON team_mates(email);
 
 -- NOTE: team_id indexes are created by Migration 7 (migratePlansToTeams), not here,
 -- so that opening a pre-rename database (with plan_id columns) does not fail.
@@ -129,7 +152,8 @@ CREATE TABLE IF NOT EXISTS jira_snapshot_refresh_logs (
     prev_issues_count   INTEGER NOT NULL,
     new_issues_count    INTEGER NOT NULL,
     user_deltas         TEXT NOT NULL DEFAULT '[]',
-    user_deltas_all     TEXT NOT NULL DEFAULT '[]'
+    user_deltas_all     TEXT NOT NULL DEFAULT '[]',
+    zero_log_members    TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX IF NOT EXISTS idx_jira_snapshot_refresh_logs_snapshot_id ON jira_snapshot_refresh_logs(snapshot_id);
@@ -154,3 +178,4 @@ CREATE TABLE IF NOT EXISTS jira_auto_refresh_audits (
 CREATE INDEX IF NOT EXISTS idx_jira_auto_refresh_audits_snapshot_id ON jira_auto_refresh_audits(snapshot_id);
 CREATE INDEX IF NOT EXISTS idx_jira_auto_refresh_audits_team_id ON jira_auto_refresh_audits(team_id);
 CREATE INDEX IF NOT EXISTS idx_jira_auto_refresh_audits_triggered_at ON jira_auto_refresh_audits(triggered_at);
+

@@ -9,13 +9,28 @@ import (
 // ComputeUserDeltas calculates the change in logged hours for each contributor between two leaderboard states.
 func ComputeUserDeltas(oldEntries, newEntries []models.JiraLeaderboardEntry) []models.JiraUserRefreshDelta {
 	oldMap := make(map[string]float64)
+	authorAccountIDMap := make(map[string]string)
+	authorEmailMap := make(map[string]string)
+
 	for _, e := range oldEntries {
 		oldMap[e.AuthorName] = e.HoursLogged
+		if e.AuthorAccountID != "" {
+			authorAccountIDMap[e.AuthorName] = e.AuthorAccountID
+		}
+		if e.AuthorEmail != "" {
+			authorEmailMap[e.AuthorName] = e.AuthorEmail
+		}
 	}
 
 	newMap := make(map[string]float64)
 	for _, e := range newEntries {
 		newMap[e.AuthorName] = e.HoursLogged
+		if e.AuthorAccountID != "" {
+			authorAccountIDMap[e.AuthorName] = e.AuthorAccountID
+		}
+		if e.AuthorEmail != "" {
+			authorEmailMap[e.AuthorName] = e.AuthorEmail
+		}
 	}
 
 	authors := make(map[string]bool)
@@ -36,6 +51,8 @@ func ComputeUserDeltas(oldEntries, newEntries []models.JiraLeaderboardEntry) []m
 
 		deltas = append(deltas, models.JiraUserRefreshDelta{
 			AuthorName:      author,
+			AuthorAccountID: authorAccountIDMap[author],
+			AuthorEmail:     authorEmailMap[author],
 			PrevHoursLogged: prev,
 			NewHoursLogged:  curr,
 			HoursDelta:      delta,

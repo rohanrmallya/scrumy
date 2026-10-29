@@ -34,8 +34,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	var user models.User
 	var passwordHash string
-	err := h.DB.QueryRow("SELECT id, username, password_hash, role FROM users WHERE username = ?", req.Username).
-		Scan(&user.ID, &user.Username, &passwordHash, &user.Role)
+	err := h.DB.QueryRow("SELECT id, username, password_hash, role, email, jira_account_id FROM users WHERE username = ?", req.Username).
+		Scan(&user.ID, &user.Username, &passwordHash, &user.Role, &user.Email, &user.JiraAccountID)
 	if err == sql.ErrNoRows {
 		respondErr(w, http.StatusUnauthorized, "invalid credentials")
 		return
@@ -73,6 +73,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
 	if err := decode(r, &req); err != nil {
 		respondErr(w, http.StatusBadRequest, "invalid request")
@@ -90,15 +91,50 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	email := strings.TrimSpace(req.Email)
 	userID := uuid.New().String()
-	_, err = h.DB.Exec("INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
-		userID, req.Username, string(hash), "user")
+	_, err = h.DB.Exec("INSERT INTO users (id, username, password_hash, role, email) VALUES (?, ?, ?, ?, ?)",
+		userID, req.Username, string(hash), "user", email)
 	if err != nil {
 		respondErr(w, http.StatusConflict, "username already exists")
 		return
 	}
 
+	if email != "" {
+		_, _ = h.DB.Exec("UPDATE team_mates SET user_id = ? WHERE email = ? AND user_id IS NULL", userID, email)
+	}
+
 	respond(w, http.StatusCreated, map[string]string{"id": userID})
+}
+
+func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	user := h.GetUserFromContext(r.Context())
+	if user == nil {
+		respondErr(w, http.StatusUnauthorized, "not logged in")
+		return
+	}
+
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := decode(r, &req); err != nil {
+		respondErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+
+	email := strings.TrimSpace(req.Email)
+	_, err := h.DB.Exec("UPDATE users SET email = ? WHERE id = ?", email, user.ID)
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, "failed to update profile")
+		return
+	}
+
+	if email != "" {
+		_, _ = h.DB.Exec("UPDATE team_mates SET user_id = ? WHERE email = ? AND user_id IS NULL", user.ID, email)
+	}
+
+	user.Email = email
+	respond(w, http.StatusOK, user)
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -135,11 +171,11 @@ func (h *AuthHandler) GetUser(r *http.Request) *models.User {
 
 	var user models.User
 	err = h.DB.QueryRow(`
-		SELECT u.id, u.username, u.role 
+		SELECT u.id, u.username, u.role, u.email, u.jira_account_id 
 		FROM users u 
 		JOIN sessions s ON u.id = s.user_id 
 		WHERE s.id = ? AND s.expires_at > CURRENT_TIMESTAMP`,
-		cookie.Value).Scan(&user.ID, &user.Username, &user.Role)
+		cookie.Value).Scan(&user.ID, &user.Username, &user.Role, &user.Email, &user.JiraAccountID)
 	if err != nil {
 		return nil
 	}

@@ -84,9 +84,18 @@ type AutoRefreshJobInfo struct {
 
 type JiraUserRefreshDelta struct {
 	AuthorName      string  `json:"author_name"`
+	AuthorAccountID string  `json:"author_account_id,omitempty"`
+	AuthorEmail     string  `json:"author_email,omitempty"`
 	PrevHoursLogged float64 `json:"prev_hours_logged"`
 	NewHoursLogged  float64 `json:"new_hours_logged"`
 	HoursDelta      float64 `json:"hours_delta"`
+}
+
+type JiraZeroLogMember struct {
+	Name          string  `json:"name"`
+	Email         string  `json:"email,omitempty"`
+	JiraAccountID string  `json:"jira_account_id,omitempty"`
+	TotalHours    float64 `json:"total_hours"`
 }
 
 type JiraSnapshotRefresh struct {
@@ -103,6 +112,7 @@ type JiraSnapshotRefresh struct {
 	NewIssuesCount    int                    `json:"new_issues_count"`
 	UserDeltas        []JiraUserRefreshDelta `json:"user_deltas"`
 	UserDeltasAll     []JiraUserRefreshDelta `json:"user_deltas_all"`
+	ZeroLogMembers    []JiraZeroLogMember    `json:"zero_log_members,omitempty"`
 }
 
 type JiraIssue struct {
@@ -131,10 +141,12 @@ type JiraWorklogItem struct {
 }
 
 type JiraLeaderboardEntry struct {
-	AuthorName  string            `json:"author_name"`
-	HoursLogged float64           `json:"hours_logged"`
-	Percentage  float64           `json:"percentage"`
-	Worklogs    []JiraWorklogItem `json:"worklogs"`
+	AuthorName      string            `json:"author_name"`
+	AuthorAccountID string            `json:"author_account_id,omitempty"`
+	AuthorEmail     string            `json:"author_email,omitempty"`
+	HoursLogged     float64           `json:"hours_logged"`
+	Percentage      float64           `json:"percentage"`
+	Worklogs        []JiraWorklogItem `json:"worklogs"`
 }
 
 type JiraSnapshotData struct {
@@ -146,11 +158,27 @@ type JiraSnapshotData struct {
 }
 
 type User struct {
-	ID           string    `json:"id"`
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"-"`
-	Role         string    `json:"role"` // admin | user
-	CreatedAt    time.Time `json:"created_at"`
+	ID            string    `json:"id"`
+	Username      string    `json:"username"`
+	Email         string    `json:"email"`
+	JiraAccountID string    `json:"jira_account_id,omitempty"`
+	PasswordHash  string    `json:"-"`
+	Role          string    `json:"role"` // admin | user
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+type TeamMate struct {
+	ID            string    `json:"id"`
+	TeamID        string    `json:"team_id"`
+	UserID        *string   `json:"user_id,omitempty"`
+	Username      string    `json:"username,omitempty"` // populated if linked to a user
+	Name          string    `json:"name"`
+	Email         string    `json:"email"`
+	JiraAccountID string    `json:"jira_account_id,omitempty"`
+	Role          string    `json:"role"`
+	AvatarURL     string    `json:"avatar_url"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type Session struct {

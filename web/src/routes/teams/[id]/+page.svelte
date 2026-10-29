@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { api, type Team, type CapacityPlan, type Presentation, type JiraSnapshot, type JiraSettings, type Sprint } from '$lib/api';
+  import { api, type Team, type TeamMate, type CapacityPlan, type Presentation, type JiraSnapshot, type JiraSettings, type Sprint } from '$lib/api';
   import { user } from '$lib/auth';
 
   const teamID = $derived($page.params.id);
@@ -11,6 +11,7 @@
   let capacityPlans = $state<CapacityPlan[]>([]);
   let presentations = $state<Presentation[]>([]);
   let snapshots = $state<JiraSnapshot[]>([]);
+  let mates = $state<TeamMate[]>([]);
   let loading = $state(true);
   let error = $state('');
 
@@ -38,7 +39,162 @@
   );
 
   // Tab switcher
-  let activeTab = $state<'overview' | 'settings'>('overview');
+  let activeTab = $state<'overview' | 'mates' | 'settings'>('overview');
+
+  // Team Mates state
+  let mateFilter = $state('');
+  let showAddMateModal = $state(false);
+  let editingMate = $state<TeamMate | null>(null);
+  let mateName = $state('');
+  let mateEmail = $state('');
+  let mateRole = $state('');
+  let mateJiraID = $state('');
+  let savingMate = $state(false);
+  let mateFormError = $state('');
+  let bulkAddingMates = $state(false);
+
+  function initials(name: string) {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function avatarBg(name: string) {
+    const palette = [
+      ['#DBEAFE', '#2563EB'],
+      ['#F3E8FF', '#7C3AED'],
+      ['#DCFCE7', '#16A34A'],
+      ['#FFEDD5', '#EA580C'],
+      ['#FCE7F3', '#DB2777'],
+      ['#E0E7FF', '#4F46E5'],
+      ['#FEF3C7', '#D97706'],
+      ['#ECFDF5', '#0D9488'],
+    ];
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 997;
+    return palette[h % palette.length];
+  }
+
+  const filteredMates = $derived(
+    mateFilter.trim()
+      ? mates.filter(m =>
+          m.name.toLowerCase().includes(mateFilter.trim().toLowerCase()) ||
+          m.email.toLowerCase().includes(mateFilter.trim().toLowerCase()) ||
+          (m.role && m.role.toLowerCase().includes(mateFilter.trim().toLowerCase())) ||
+          (m.username && m.username.toLowerCase().includes(mateFilter.trim().toLowerCase()))
+        )
+      : mates
+  );
+
+  const snapshotContributors = $derived.by(() => {
+    const map = new Map<string, { name: string; email: string; jira_account_id: string }>();
+    for (const s of snapshots) {
+      const list = [...(s.data?.leaderboard || []), ...(s.data?.leaderboard_all || [])];
+      for (const item of list) {
+        if (!item.author_name) continue;
+        const key = (item.author_email || item.author_name).toLowerCase().trim();
+        if (!map.has(key)) {
+          map.set(key, {
+            name: item.author_name,
+            email: item.author_email || '',
+            jira_account_id: item.author_account_id || '',
+          });
+        }
+      }
+    }
+    return Array.from(map.values());
+  });
+
+  const unaddedContributors = $derived.by(() => {
+    const mateEmails = new Set(mates.map(m => m.email.toLowerCase().trim()).filter(Boolean));
+    const mateNames = new Set(mates.map(m => m.name.toLowerCase().trim()));
+    return snapshotContributors.filter(c => {
+      if (c.email && mateEmails.has(c.email.toLowerCase().trim())) return false;
+      if (mateNames.has(c.name.toLowerCase().trim())) return false;
+      return true;
+    });
+  });
+
+  function openAddMateModal(prefill?: { name: string; email: string; jira_account_id: string }) {
+    editingMate = null;
+    mateName = prefill?.name || '';
+    mateEmail = prefill?.email || '';
+    mateRole = '';
+    mateJiraID = prefill?.jira_account_id || '';
+    mateFormError = '';
+    showAddMateModal = true;
+  }
+
+  function openEditMateModal(m: TeamMate) {
+    editingMate = m;
+    mateName = m.name;
+    mateEmail = m.email || '';
+    mateRole = m.role || '';
+    mateJiraID = m.jira_account_id || '';
+    mateFormError = '';
+    showAddMateModal = true;
+  }
+
+  async function saveMate() {
+    if (!mateName.trim()) {
+      mateFormError = 'Name is required';
+      return;
+    }
+    savingMate = true;
+    mateFormError = '';
+    try {
+      if (editingMate) {
+        const updated = await api.teams.mates.update(teamID, editingMate.id, {
+          name: mateName.trim(),
+          email: mateEmail.trim(),
+          role: mateRole.trim(),
+          jira_account_id: mateJiraID.trim(),
+        });
+        mates = mates.map(m => m.id === updated.id ? updated : m);
+      } else {
+        const created = await api.teams.mates.add(teamID, {
+          name: mateName.trim(),
+          email: mateEmail.trim(),
+          role: mateRole.trim(),
+          jira_account_id: mateJiraID.trim(),
+        });
+        mates = [...mates, created];
+      }
+      showAddMateModal = false;
+    } catch (e: any) {
+      mateFormError = e.message;
+    } finally {
+      savingMate = false;
+    }
+  }
+
+  async function deleteMate(m: TeamMate) {
+    if (!confirm(`Are you sure you want to remove ${m.name} from this team?`)) return;
+    try {
+      await api.teams.mates.delete(teamID, m.id);
+      mates = mates.filter(x => x.id !== m.id);
+    } catch (e: any) {
+      alert(`Failed to remove team mate: ${e.message}`);
+    }
+  }
+
+  async function addAllSnapshotContributors() {
+    if (unaddedContributors.length === 0) return;
+    bulkAddingMates = true;
+    try {
+      await api.teams.mates.bulkAdd(teamID, unaddedContributors.map(c => ({
+        name: c.name,
+        email: c.email,
+        jira_account_id: c.jira_account_id,
+      })));
+      mates = await api.teams.mates.list(teamID);
+    } catch (e: any) {
+      alert(`Failed to add contributors: ${e.message}`);
+    } finally {
+      bulkAddingMates = false;
+    }
+  }
 
   // Jira Config Form
   let jiraURL = $state('');
@@ -63,17 +219,19 @@
 
   onMount(async () => {
     try {
-      const [p, c, pr, sn] = await Promise.all([
+      const [p, c, pr, sn, tm] = await Promise.all([
         api.teams.get(teamID),
         api.capacity.list(teamID),
         api.presentations.list(teamID),
         api.jira.listSnapshots(teamID),
+        api.teams.mates.list(teamID),
       ]);
       team = p;
       teamNameDraft = p.name ?? '';
       capacityPlans = c;
       presentations = pr;
       snapshots = sn;
+      mates = tm;
 
       jiraURL = p.jira_url || '';
       jiraUser = p.jira_user || '';
@@ -402,6 +560,12 @@
         Sprint Overview
       </button>
       <button 
+        class="tab-btn {activeTab === 'mates' ? 'active' : ''}" 
+        onclick={() => activeTab = 'mates'}
+      >
+        👥 Team Mates ({mates.length})
+      </button>
+      <button 
         class="tab-btn {activeTab === 'settings' ? 'active' : ''}" 
         onclick={() => { activeTab = 'settings'; teamNameDraft = team?.name ?? ''; renameError = ''; renameSaved = false; }}
       >
@@ -687,6 +851,158 @@
           </div>
         </div>
 
+      </div>
+    {:else if activeTab === 'mates'}
+      <div style="display:flex; flex-direction:column; gap:20px;">
+        <!-- Header banner / actions -->
+        <div class="card" style="padding:16px 20px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+            <div>
+              <h2 class="font-bold text-lg" style="margin:0; display:flex; align-items:center; gap:8px;">
+                <span>👥</span> Team Mates ({mates.length})
+              </h2>
+              <p class="text-xs text-muted" style="margin:4px 0 0 0;">
+                Members belonging to this team. Jira worklogs are attributed to these team mates, and corporate emails link to Scrumy accounts.
+              </p>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <div style="position:relative; width:220px;">
+                <span style="position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:12px; color:var(--c-text-3);">🔍</span>
+                <input
+                  type="text"
+                  class="input"
+                  placeholder="Filter mates..."
+                  bind:value={mateFilter}
+                  style="padding-left:30px; font-size:12px; height:34px;"
+                />
+                {#if mateFilter}
+                  <button
+                    onclick={() => mateFilter = ''}
+                    style="position:absolute; right:8px; top:50%; transform:translateY(-50%); background:none; border:none; font-size:11px; color:var(--c-text-3); cursor:pointer;"
+                  >✕</button>
+                {/if}
+              </div>
+              {#if team?.is_admin}
+                <button class="btn btn-primary btn-sm" onclick={() => openAddMateModal()}>
+                  + Add Team Mate
+                </button>
+              {/if}
+            </div>
+          </div>
+        </div>
+
+        <!-- Suggestion box for unadded contributors -->
+        {#if team?.is_admin && unaddedContributors.length > 0}
+          <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:10px; padding:16px 20px; display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap;">
+            <div>
+              <div style="font-size:14px; font-weight:700; color:#1e40af; display:flex; align-items:center; gap:6px;">
+                <span>💡</span> {unaddedContributors.length} contributor{unaddedContributors.length > 1 ? 's' : ''} found in snapshots not yet in team
+              </div>
+              <div style="font-size:12px; color:#3b82f6; margin-top:4px;">
+                {unaddedContributors.slice(0, 5).map(c => c.name).join(', ')}{unaddedContributors.length > 5 ? ` and ${unaddedContributors.length - 5} more` : ''}
+              </div>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-primary btn-sm" onclick={addAllSnapshotContributors} disabled={bulkAddingMates}>
+                {bulkAddingMates ? 'Adding...' : `+ Add All to Team (${unaddedContributors.length})`}
+              </button>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Team Mates Table Card -->
+        <div class="card" style="overflow:hidden;">
+          {#if filteredMates.length === 0}
+            <div style="padding:48px 20px; text-align:center;">
+              <span style="font-size:36px; display:block; margin-bottom:10px;">👥</span>
+              <p class="font-semibold text-base" style="margin:0 0 6px 0; color:var(--c-text);">No team mates found</p>
+              <p class="text-xs text-muted" style="margin:0 0 16px 0;">
+                {mateFilter ? 'Try a different filter query.' : 'Add your first team mate from snapshots or manually.'}
+              </p>
+              {#if team?.is_admin}
+                {#if unaddedContributors.length > 0}
+                  <button class="btn btn-primary btn-sm" onclick={addAllSnapshotContributors} disabled={bulkAddingMates}>
+                    Add All Contributors from Snapshots ({unaddedContributors.length})
+                  </button>
+                {:else}
+                  <button class="btn btn-primary btn-sm" onclick={() => openAddMateModal()}>
+                    + Add Team Mate
+                  </button>
+                {/if}
+              {/if}
+            </div>
+          {:else}
+            <div style="overflow-x:auto;">
+              <table style="width:100%; border-collapse:collapse; font-size:13px; text-align:left;">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--c-border); background:var(--c-surface-2); color:var(--c-text-2); font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">
+                    <th style="padding:12px 18px; font-weight:600;">Member</th>
+                    <th style="padding:12px 18px; font-weight:600;">Email</th>
+                    <th style="padding:12px 18px; font-weight:600;">Role</th>
+                    <th style="padding:12px 18px; font-weight:600;">Scrumy User</th>
+                    <th style="padding:12px 18px; font-weight:600;">Jira ID</th>
+                    {#if team?.is_admin}
+                      <th style="padding:12px 18px; font-weight:600; text-align:right;">Actions</th>
+                    {/if}
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each filteredMates as m}
+                    {@const av = avatarBg(m.name)}
+                    <tr style="border-bottom:1px solid var(--c-border); background:var(--c-surface);">
+                      <td style="padding:12px 18px; font-weight:600; color:var(--c-text); white-space:nowrap;">
+                        <div style="display:flex; align-items:center; gap:10px;">
+                          <span style="width:32px; height:32px; border-radius:50%; background:{av[0]}; color:{av[1]}; font-size:11px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;">
+                            {initials(m.name)}
+                          </span>
+                          <div>
+                            <div>{m.name}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style="padding:12px 18px; color:var(--c-text-2); white-space:nowrap;">
+                        {#if m.email}
+                          <a href="mailto:{m.email}" style="color:var(--c-primary); text-decoration:none;">{m.email}</a>
+                        {:else}
+                          <span class="text-muted" style="font-size:12px;">—</span>
+                        {/if}
+                      </td>
+                      <td style="padding:12px 18px; white-space:nowrap;">
+                        {#if m.role}
+                          <span class="badge badge-default" style="font-size:11px; padding:2px 8px;">{m.role}</span>
+                        {:else}
+                          <span class="text-muted" style="font-size:12px;">Member</span>
+                        {/if}
+                      </td>
+                      <td style="padding:12px 18px; white-space:nowrap;">
+                        {#if m.username}
+                          <span class="badge badge-success" style="font-size:11px; padding:3px 8px; display:inline-flex; align-items:center; gap:4px;" title="Linked to Scrumy user: @{m.username}">
+                            <span>✓</span> @{m.username}
+                          </span>
+                        {:else}
+                          <span class="text-muted" style="font-size:11px;" title="No Scrumy user registered with this email yet">Unlinked</span>
+                        {/if}
+                      </td>
+                      <td style="padding:12px 18px; color:var(--c-text-3); font-size:11px; font-family:monospace; white-space:nowrap;">
+                        {m.jira_account_id ? m.jira_account_id.slice(0, 16) + (m.jira_account_id.length > 16 ? '...' : '') : '—'}
+                      </td>
+                      {#if team?.is_admin}
+                        <td style="padding:12px 18px; text-align:right; white-space:nowrap;">
+                          <button class="btn btn-secondary btn-sm" style="font-size:11px; padding:3px 8px; margin-right:6px;" onclick={() => openEditMateModal(m)}>
+                            Edit
+                          </button>
+                          <button class="btn btn-outline-danger btn-sm" style="font-size:11px; padding:3px 8px;" onclick={() => deleteMate(m)}>
+                            Remove
+                          </button>
+                        </td>
+                      {/if}
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+        </div>
       </div>
     {:else if activeTab === 'settings'}
       <!-- Team Settings -->
@@ -991,6 +1307,75 @@
           <button class="btn btn-secondary" onclick={() => activeEditSnapshot = null} disabled={updatingSnapshot}>Cancel</button>
           <button class="btn btn-primary" onclick={saveEditedSnapshot} disabled={updatingSnapshot}>
             {updatingSnapshot ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if showAddMateModal}
+    <div style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:1000; backdrop-filter:blur(4px); transition: opacity 0.2s ease;">
+      <div style="background:var(--c-surface); border:1px solid var(--c-border); border-radius:12px; width:480px; max-width:90%; padding:24px; box-shadow:var(--shadow-lg);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--c-border); padding-bottom:12px;">
+          <h3 class="font-semibold text-base" style="color:var(--c-primary); margin:0;">
+            {editingMate ? 'Edit Team Mate' : 'Add Team Mate'}
+          </h3>
+          <button class="btn-icon" onclick={() => showAddMateModal = false} style="font-size:14px; width:28px; height:28px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; background:transparent; cursor:pointer;">✕</button>
+        </div>
+
+        {#if !editingMate && unaddedContributors.length > 0}
+          <div style="margin-bottom:16px; background:var(--c-surface-2); padding:10px 14px; border-radius:8px; border:1px solid var(--c-border);">
+            <label class="label" style="font-size:11px; margin-bottom:6px;" for="quick-pick-contrib">Quick-pick from snapshot contributor:</label>
+            <select
+              id="quick-pick-contrib"
+              class="input"
+              style="padding:6px; font-size:12px;"
+              onchange={(e) => {
+                const selected = unaddedContributors.find(c => c.name === e.currentTarget.value);
+                if (selected) {
+                  mateName = selected.name;
+                  mateEmail = selected.email;
+                  mateJiraID = selected.jira_account_id;
+                }
+              }}
+            >
+              <option value="">-- Select a contributor --</option>
+              {#each unaddedContributors as c}
+                <option value={c.name}>{c.name}{c.email ? ` (${c.email})` : ''}</option>
+              {/each}
+            </select>
+          </div>
+        {/if}
+
+        <div style="display:flex; flex-direction:column; gap:14px; margin-bottom:20px;">
+          <div class="form-group">
+            <label class="label" style="font-size:11px; margin-bottom:6px;" for="mate-name">Name <span style="color:var(--c-danger);">*</span></label>
+            <input id="mate-name" class="input" style="padding:10px; font-size:13px;" bind:value={mateName} placeholder="e.g. Alice Cooper" />
+          </div>
+          <div class="form-group">
+            <label class="label" style="font-size:11px; margin-bottom:6px;" for="mate-email">Corporate Email (links to Scrumy account)</label>
+            <input id="mate-email" type="email" class="input" style="padding:10px; font-size:13px;" bind:value={mateEmail} placeholder="e.g. alice@company.com" />
+          </div>
+          <div class="form-group">
+            <label class="label" style="font-size:11px; margin-bottom:6px;" for="mate-role">Role / Designation</label>
+            <input id="mate-role" class="input" style="padding:10px; font-size:13px;" bind:value={mateRole} placeholder="e.g. Frontend Engineer, Scrum Master" />
+          </div>
+          <div class="form-group">
+            <label class="label" style="font-size:11px; margin-bottom:6px;" for="mate-jira-id">Jira Account ID / Key (optional, synced from Jira)</label>
+            <input id="mate-jira-id" class="input" style="padding:10px; font-size:13px; font-family:monospace;" bind:value={mateJiraID} placeholder="Auto-captured or optional" />
+          </div>
+        </div>
+
+        {#if mateFormError}
+          <div class="badge badge-danger" style="margin-bottom:16px; padding:10px; border-radius:6px; font-size:12px; text-transform:none; letter-spacing:0; text-align:center; display:block; font-weight:400;">
+            ⚠️ {mateFormError}
+          </div>
+        {/if}
+
+        <div style="display:flex; justify-content:flex-end; gap:12px; border-top:1px solid var(--c-border); padding-top:16px;">
+          <button class="btn btn-secondary" onclick={() => showAddMateModal = false} disabled={savingMate}>Cancel</button>
+          <button class="btn btn-primary" onclick={saveMate} disabled={savingMate}>
+            {savingMate ? 'Saving...' : (editingMate ? 'Save Changes' : 'Add Team Mate')}
           </button>
         </div>
       </div>
