@@ -208,6 +208,25 @@
   let testResult = $state<{ ok: boolean; message: string } | null>(null);
   let savingSettings = $state(false);
 
+  // Base JQL Info Modal state
+  let showJqlInfoModal = $state(false);
+  let copiedJqlExample = $state<string | null>(null);
+
+  function copyJqlExampleText(text: string) {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+    }
+    copiedJqlExample = text;
+    setTimeout(() => {
+      if (copiedJqlExample === text) copiedJqlExample = null;
+    }, 2000);
+  }
+
+  function applyJqlExample(text: string) {
+    jiraJQL = text;
+    showJqlInfoModal = false;
+  }
+
   // Snapshots Form
   let showCreateSnapshotForm = $state(false);
   let newSnapshotName = $state('');
@@ -533,6 +552,13 @@
 <svelte:head>
   <title>{team?.name ?? 'Team'} – Scrumy</title>
 </svelte:head>
+
+<svelte:window onkeydown={(e) => {
+  if (e.key === 'Escape') {
+    if (showJqlInfoModal) showJqlInfoModal = false;
+    if (activeEditSnapshot) activeEditSnapshot = null;
+  }
+}} />
 
 <div class="page-content fade-in">
   {#if loading}
@@ -1067,8 +1093,24 @@
               <input type="password" class="input" bind:value={jiraToken} placeholder={jiraTokenSet ? "•••••••• (Configured)" : "Enter API Token"} disabled={!team?.is_admin} />
             </div>
             <div class="form-group">
-              <label class="label" style="font-size:11px;">Base JQL Filter</label>
-              <input class="input" bind:value={jiraJQL} placeholder="project = PROJ AND statusCategory = Done" disabled={!team?.is_admin} />
+              <div class="flex items-center gap-1.5">
+                <label class="label" style="font-size:11px; margin-bottom:0;">Base JQL Filter</label>
+                <button
+                  type="button"
+                  class="info-btn"
+                  onclick={() => showJqlInfoModal = true}
+                  title="How Base JQL is used in building snapshots & syntax guide"
+                  aria-label="How Base JQL is used in building snapshots"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                  </svg>
+                </button>
+              </div>
+              <input class="input" bind:value={jiraJQL} placeholder="project = PROJ AND issuetype in (Story, Bug, Task)" disabled={!team?.is_admin} />
+              <p class="text-xs text-muted" style="margin-top:2px; font-size:10px;">Defines the team scope. Dates are automatically appended for each snapshot. Click (i) for best practices.</p>
             </div>
             <div class="form-group">
               <label class="label" style="font-size:11px;">Story Points Field (Optional)</label>
@@ -1381,6 +1423,190 @@
       </div>
     </div>
   {/if}
+
+  <!-- Base JQL Information & Best Practices Popup Modal -->
+  {#if showJqlInfoModal}
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="jql-modal-title"
+      tabindex="-1"
+      style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:1000; backdrop-filter:blur(4px); transition: opacity 0.2s ease; padding: 16px;"
+      onclick={(e) => { if (e.target === e.currentTarget) showJqlInfoModal = false; }}
+    >
+      <div style="background:var(--c-surface); border:1px solid var(--c-border); border-radius:12px; width:640px; max-width:100%; max-height:88vh; display:flex; flex-direction:column; box-shadow:var(--shadow-xl); animation:slideUp 0.15s ease-out; overflow:hidden;">
+        <!-- Modal Header -->
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 22px; border-bottom:1px solid var(--c-border); background:var(--c-bg);">
+          <div style="display:flex; gap:10px; align-items:center;">
+            <div style="width:30px; height:30px; border-radius:50%; background:var(--c-primary-lt); color:var(--c-primary); display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:700;">
+              ℹ️
+            </div>
+            <div>
+              <h3 id="jql-modal-title" class="font-semibold text-base" style="color:var(--c-text); margin:0;">Base JQL Guide</h3>
+              <p class="text-xs text-muted" style="margin-top:2px; font-size:11px;">How Base JQL is used in building snapshots &amp; recommended syntax</p>
+            </div>
+          </div>
+          <button
+            class="btn-icon"
+            onclick={() => showJqlInfoModal = false}
+            aria-label="Close"
+            style="font-size:14px; width:28px; height:28px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; background:transparent; cursor:pointer;"
+          >
+            ✕
+          </button>
+        </div>
+
+        <!-- Modal Body (Scrollable) -->
+        <div style="padding:20px 22px; overflow-y:auto; display:flex; flex-direction:column; gap:18px; font-size:13px; line-height:1.5;">
+
+          <!-- Section 1: How Snapshots Use It -->
+          <div>
+            <div style="font-size:13px; font-weight:600; color:var(--c-text); display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+              <span>⚡</span> How Base JQL Powers Snapshots
+            </div>
+            <p style="color:var(--c-text-2); margin-bottom:8px; font-size:12px;">
+              Your <strong>Base JQL</strong> defines the team or project scope (e.g. project key, issue types, components).
+              When Scrumy builds or auto-refreshes a snapshot for a specific sprint or date range, it automatically wraps your Base JQL and injects dynamic date boundaries:
+            </p>
+            <div style="background:var(--c-bg); border:1px solid var(--c-border); border-radius:8px; padding:10px 14px; font-family:ui-monospace, monospace; font-size:11px; color:var(--c-text); line-height:1.6; overflow-x:auto;">
+              <span style="color:var(--c-primary); font-weight:600;">({jiraJQL.trim() || 'YOUR_BASE_JQL'})</span>
+              <br/>
+              <span style="color:var(--c-text-3);">AND (</span>
+              <br/>
+              &nbsp;&nbsp;<span style="color:var(--c-text-2);">(statusCategoryChangedDate &gt;= "start" AND statusCategoryChangedDate &lt;= "end 23:59")</span>
+              <br/>
+              &nbsp;&nbsp;<span style="color:var(--c-text-3);">OR</span>
+              <br/>
+              &nbsp;&nbsp;<span style="color:var(--c-text-2);">(worklogDate &gt;= "start" AND worklogDate &lt;= "end")</span>
+              <br/>
+              <span style="color:var(--c-text-3);">)</span>
+            </div>
+            <p class="text-muted" style="margin-top:8px; font-size:11px; line-height:1.4;">
+              This dual condition retrieves issues that <strong>transitioned status</strong> (e.g. moved to In Progress or Done) OR had <strong>worklogs recorded</strong> by contributors during the snapshot period.
+            </p>
+          </div>
+
+          <!-- Section 2: Good vs Bad JQL Grid -->
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:12px;">
+            <!-- Good JQL -->
+            <div style="background:var(--c-success-lt); border:1px solid rgba(16, 185, 129, 0.35); border-radius:8px; padding:12px 14px;">
+              <div style="display:flex; align-items:center; gap:6px; font-weight:600; font-size:12px; color:#065f46; margin-bottom:8px;">
+                <span>✅</span> What makes a GOOD JQL
+              </div>
+              <ul style="padding-left:16px; margin:0; display:flex; flex-direction:column; gap:6px; font-size:11px; color:#064e3b; line-height:1.45;">
+                <li>
+                  <strong>Scope to Project:</strong> Target your team's project key(s):<br/>
+                  <code style="background:rgba(255,255,255,0.7); padding:1px 4px; border-radius:3px;">project = "PROJ"</code>
+                </li>
+                <li>
+                  <strong>Target Issue Types:</strong> Include stories, bugs, and tasks:<br/>
+                  <code style="background:rgba(255,255,255,0.7); padding:1px 4px; border-radius:3px;">issuetype in (Story, Bug, Task)</code>
+                </li>
+                <li>
+                  <strong>Component / Label Scope:</strong> If multiple squads share a Jira project:<br/>
+                  <code style="background:rgba(255,255,255,0.7); padding:1px 4px; border-radius:3px;">component = "Backend"</code>
+                </li>
+                <li>
+                  <strong>Keep Status Flexible:</strong> Allow in-progress and completed issues so hours logged on in-flight tasks are tracked.
+                </li>
+              </ul>
+            </div>
+
+            <!-- Not Good JQL -->
+            <div style="background:var(--c-danger-lt); border:1px solid rgba(239, 68, 68, 0.35); border-radius:8px; padding:12px 14px;">
+              <div style="display:flex; align-items:center; gap:6px; font-weight:600; font-size:12px; color:#991b1b; margin-bottom:8px;">
+                <span>❌</span> What to AVOID (Not Good JQL)
+              </div>
+              <ul style="padding-left:16px; margin:0; display:flex; flex-direction:column; gap:6px; font-size:11px; color:#7f1d1d; line-height:1.45;">
+                <li>
+                  <strong>No Fixed Dates:</strong> Never add <code style="background:rgba(255,255,255,0.7); padding:1px 3px; border-radius:3px;">created &gt;= ...</code> or <code style="background:rgba(255,255,255,0.7); padding:1px 3px; border-radius:3px;">resolved &gt;= ...</code>. Scrumy manages snapshot dates dynamically.
+                </li>
+                <li>
+                  <strong>No ORDER BY:</strong> Never add <code style="background:rgba(255,255,255,0.7); padding:1px 3px; border-radius:3px;">ORDER BY created DESC</code>. Jira errors out if ORDER BY is inside compound clauses.
+                </li>
+                <li>
+                  <strong>Avoid strict status = Done:</strong> Excluding active items prevents Scrumy from capturing sprint worklogs on in-progress tasks.
+                </li>
+                <li>
+                  <strong>Quote Identifiers:</strong> Names or components with spaces or symbols must be enclosed in quotes.
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Section 3: Recommended Quick Examples -->
+          <div>
+            <div style="font-size:12px; font-weight:600; color:var(--c-text); display:flex; align-items:center; gap:6px; margin-bottom:8px;">
+              <span>💡</span> Recommended Examples
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <!-- Example 1 -->
+              <div style="background:var(--c-bg); border:1px solid var(--c-border); border-radius:8px; padding:9px 12px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                <div style="overflow:hidden;">
+                  <div style="font-size:10px; font-weight:600; color:var(--c-text-2); margin-bottom:2px;">Standard Project &amp; Work Items</div>
+                  <code style="font-family:ui-monospace, monospace; font-size:11px; color:var(--c-primary); word-break:break-all;">project = "PROJ" AND issuetype in (Story, Bug, Task)</code>
+                </div>
+                <div style="display:flex; gap:6px; flex-shrink:0;">
+                  <button type="button" class="btn btn-secondary btn-xs" onclick={() => copyJqlExampleText('project = "PROJ" AND issuetype in (Story, Bug, Task)')}>
+                    {copiedJqlExample === 'project = "PROJ" AND issuetype in (Story, Bug, Task)' ? '✓ Copied' : 'Copy'}
+                  </button>
+                  {#if team?.is_admin}
+                    <button type="button" class="btn btn-primary btn-xs" onclick={() => applyJqlExample('project = "PROJ" AND issuetype in (Story, Bug, Task)')}>
+                      Use
+                    </button>
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Example 2 -->
+              <div style="background:var(--c-bg); border:1px solid var(--c-border); border-radius:8px; padding:9px 12px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                <div style="overflow:hidden;">
+                  <div style="font-size:10px; font-weight:600; color:var(--c-text-2); margin-bottom:2px;">Project with Component Scope</div>
+                  <code style="font-family:ui-monospace, monospace; font-size:11px; color:var(--c-primary); word-break:break-all;">project = "PROJ" AND component = "Backend" AND issuetype in (Story, Bug, Task)</code>
+                </div>
+                <div style="display:flex; gap:6px; flex-shrink:0;">
+                  <button type="button" class="btn btn-secondary btn-xs" onclick={() => copyJqlExampleText('project = "PROJ" AND component = "Backend" AND issuetype in (Story, Bug, Task)')}>
+                    {copiedJqlExample === 'project = "PROJ" AND component = "Backend" AND issuetype in (Story, Bug, Task)' ? '✓ Copied' : 'Copy'}
+                  </button>
+                  {#if team?.is_admin}
+                    <button type="button" class="btn btn-primary btn-xs" onclick={() => applyJqlExample('project = "PROJ" AND component = "Backend" AND issuetype in (Story, Bug, Task)')}>
+                      Use
+                    </button>
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Example 3 -->
+              <div style="background:var(--c-bg); border:1px solid var(--c-border); border-radius:8px; padding:9px 12px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                <div style="overflow:hidden;">
+                  <div style="font-size:10px; font-weight:600; color:var(--c-text-2); margin-bottom:2px;">Multi-Project Scope (Excluding Epics)</div>
+                  <code style="font-family:ui-monospace, monospace; font-size:11px; color:var(--c-primary); word-break:break-all;">project in ("ALPHA", "BETA") AND issuetype != Epic</code>
+                </div>
+                <div style="display:flex; gap:6px; flex-shrink:0;">
+                  <button type="button" class="btn btn-secondary btn-xs" onclick={() => copyJqlExampleText('project in ("ALPHA", "BETA") AND issuetype != Epic')}>
+                    {copiedJqlExample === 'project in ("ALPHA", "BETA") AND issuetype != Epic' ? '✓ Copied' : 'Copy'}
+                  </button>
+                  {#if team?.is_admin}
+                    <button type="button" class="btn btn-primary btn-xs" onclick={() => applyJqlExample('project in ("ALPHA", "BETA") AND issuetype != Epic')}>
+                      Use
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Modal Footer -->
+        <div style="display:flex; justify-content:flex-end; padding:12px 22px; border-top:1px solid var(--c-border); background:var(--c-bg);">
+          <button type="button" class="btn btn-primary btn-sm" onclick={() => showJqlInfoModal = false}>
+            Got it
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 
@@ -1419,6 +1645,28 @@
     padding: 4px 8px;
     font-size: 11px;
     border-radius: 4px;
+  }
+
+  .info-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: var(--c-surface-2);
+    border: 1px solid var(--c-border-2);
+    color: var(--c-text-2);
+    cursor: pointer;
+    padding: 0;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+  }
+  .info-btn:hover {
+    background: var(--c-primary-lt);
+    border-color: var(--c-primary);
+    color: var(--c-primary);
+    transform: scale(1.1);
   }
 
   @keyframes slideUp {
