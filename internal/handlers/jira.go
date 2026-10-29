@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"scrumy/internal/calc"
 	"scrumy/internal/db"
@@ -968,12 +969,28 @@ func (h *JiraHandler) UpdateAutoRefreshSettings(w http.ResponseWriter, r *http.R
 		Enabled bool   `json:"auto_refresh_enabled"`
 		Time    string `json:"auto_refresh_time"`
 	}
-	if err := decode(r, &body); err != nil {
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
 		respondErr(w, 400, "invalid body")
 		return
 	}
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		var boolVal bool
+		if errBool := json.Unmarshal(bodyBytes, &boolVal); errBool == nil {
+			body.Enabled = boolVal
+		} else {
+			respondErr(w, 400, "invalid body")
+			return
+		}
+	}
 	if body.Time == "" {
-		body.Time = "09:00"
+		var existingTime sql.NullString
+		_ = h.DB.QueryRow(`SELECT auto_refresh_time FROM jira_snapshots WHERE id = ? AND team_id = ?`, snapshotID, teamID).Scan(&existingTime)
+		if existingTime.Valid && existingTime.String != "" {
+			body.Time = existingTime.String
+		} else {
+			body.Time = "09:00"
+		}
 	}
 
 	now := time.Now()

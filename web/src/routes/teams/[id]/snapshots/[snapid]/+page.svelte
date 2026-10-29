@@ -587,13 +587,16 @@
     autoRefreshError = '';
     try {
       const isEn = enabledVal !== undefined ? enabledVal : editAutoRefreshEnabled;
-      const res = await api.jira.updateAutoRefresh(teamID, snapshot.id, isEn, editAutoRefreshTime);
+      const res = await api.jira.updateAutoRefresh(teamID, snapshot.id, {
+        auto_refresh_enabled: isEn,
+        auto_refresh_time: editAutoRefreshTime || '09:00',
+      });
       snapshot.auto_refresh_enabled = res.auto_refresh_enabled;
       snapshot.auto_refresh_time = res.auto_refresh_time;
       snapshot.next_run_at = res.next_run_at;
-      editAutoRefreshEnabled = res.auto_refresh_enabled;
-      editAutoRefreshTime = res.auto_refresh_time;
-      autoRefreshNotice = isEn ? `✓ Auto-refresh scheduled for ${res.auto_refresh_time} daily` : '✓ Auto-refresh disabled';
+      editAutoRefreshEnabled = !!res.auto_refresh_enabled;
+      editAutoRefreshTime = res.auto_refresh_time || '09:00';
+      autoRefreshNotice = isEn ? `✓ Auto-refresh scheduled for ${res.auto_refresh_time || '09:00'} daily` : '✓ Auto-refresh disabled';
       setTimeout(() => { autoRefreshNotice = ''; }, 4000);
     } catch (e: any) {
       autoRefreshError = e.message;
@@ -610,13 +613,14 @@
     autoRefreshError = '';
     try {
       const res = await api.jira.runAutoRefresh(teamID, snapshot.id);
-      if (res.status === 'success') {
-        autoRefreshNotice = `✓ Auto-refresh executed successfully (${res.duration_ms}ms)`;
+      const audit = res.audit;
+      if (audit?.status === 'success') {
+        autoRefreshNotice = `✓ Auto-refresh executed successfully (${audit.duration_ms}ms)`;
         await loadData();
-      } else if (res.status === 'skipped') {
-        autoRefreshNotice = `ℹ️ Auto-refresh skipped: ${res.message || 'Outside sprint active dates'}`;
+      } else if (audit?.status === 'skipped') {
+        autoRefreshNotice = `ℹ️ Auto-refresh skipped: ${audit.message || 'Outside sprint active dates'}`;
       } else {
-        autoRefreshError = `Auto-refresh ${res.status}: ${res.message || 'Unknown error'}`;
+        autoRefreshError = `Auto-refresh ${audit?.status || 'failed'}: ${audit?.message || 'Unknown error'}`;
       }
     } catch (e: any) {
       autoRefreshError = e.message;

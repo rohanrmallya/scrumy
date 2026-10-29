@@ -221,3 +221,46 @@ func TestSuperAdminAutoRefreshViews(t *testing.T) {
 		t.Errorf("expected audit trigger_type='disabled', got %s", audits[0].TriggerType)
 	}
 }
+
+func TestUpdateAutoRefreshSettings_BooleanPayload(t *testing.T) {
+	database, _, _, jiraH := setupTestDB(t)
+
+	adminUser := &models.User{ID: "user-admin-bool", Username: "alicia_bool", Role: "user"}
+	teamID := "team-bool-1"
+	_, _ = database.Exec(`INSERT INTO teams (id, name) VALUES (?, ?)`, teamID, "Test Team")
+	_, _ = database.Exec(`INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)`, adminUser.ID, adminUser.Username, "hash", adminUser.Role)
+	_, _ = database.Exec(`INSERT INTO team_admins (team_id, user_id) VALUES (?, ?)`, teamID, adminUser.ID)
+
+	snapID := "snap-bool-1"
+	_, err := database.Exec(`
+		INSERT INTO jira_snapshots (id, team_id, name, start_date, end_date, auto_refresh_enabled, auto_refresh_time)
+		VALUES (?, ?, ?, ?, ?, 0, '10:00')
+	`, snapID, teamID, "Sprint Bool", "2026-10-01", "2026-10-31")
+	if err != nil {
+		t.Fatalf("insert snapshot: %v", err)
+	}
+
+	// Send raw boolean payload `true`
+	req := httptest.NewRequest("PUT", "/teams/"+teamID+"/jira/snapshots/"+snapID+"/auto-refresh", bytes.NewReader([]byte("true")))
+	req = req.WithContext(context.WithValue(req.Context(), userContextKey, adminUser))
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("teamID", teamID)
+	rctx.URLParams.Add("snapshotID", snapID)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	rec := httptest.NewRecorder()
+
+	jiraH.UpdateAutoRefreshSettings(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var enabled bool
+	var rTime string
+	_ = database.QueryRow(`SELECT auto_refresh_enabled, auto_refresh_time FROM jira_snapshots WHERE id = ?`, snapID).Scan(&enabled, &rTime)
+	if !enabled {
+		t.Errorf("expected auto_refresh_enabled=true")
+	}
+	if rTime != "10:00" {
+		t.Errorf("expected auto_refresh_time='10:00', got %q", rTime)
+	}
+}

@@ -403,8 +403,17 @@ export const api = {
 		getAutoRefreshJobs: (teamID: string) => get<AutoRefreshJobInfo[]>(`/teams/${teamID}/jira/auto-refresh/jobs`),
 		getAutoRefreshAudits: (teamID: string, snapshotID?: string) =>
 			get<JiraAutoRefreshAudit[]>(`/teams/${teamID}/jira/auto-refresh/audits${snapshotID ? `?snapshot_id=${encodeURIComponent(snapshotID)}` : ''}`),
-		updateAutoRefresh: (teamID: string, snapshotID: string, body: { auto_refresh_enabled: boolean; auto_refresh_time?: string }) =>
-			put<JiraSnapshot>(`/teams/${teamID}/jira/snapshots/${snapshotID}/auto-refresh`, body),
+		updateAutoRefresh: (
+			teamID: string,
+			snapshotID: string,
+			body: { auto_refresh_enabled: boolean; auto_refresh_time?: string } | boolean,
+			time?: string
+		) => {
+			const payload = typeof body === 'boolean'
+				? { auto_refresh_enabled: body, auto_refresh_time: time || '09:00' }
+				: body;
+			return put<JiraSnapshot>(`/teams/${teamID}/jira/snapshots/${snapshotID}/auto-refresh`, payload);
+		},
 		disableAutoRefresh: (teamID: string, snapshotID: string) =>
 			post<{ ok: boolean; disabled: boolean }>(`/teams/${teamID}/jira/snapshots/${snapshotID}/auto-refresh/disable`),
 		runAutoRefresh: (teamID: string, snapshotID: string) =>
