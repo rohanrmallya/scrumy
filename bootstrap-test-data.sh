@@ -176,6 +176,7 @@ DELETE FROM jira_snapshots;
 DELETE FROM sprint_leaves;
 DELETE FROM sprints;
 DELETE FROM team_members;
+DELETE FROM team_mates;
 DELETE FROM capacity_plans;
 DELETE FROM presentation_data;
 DELETE FROM presentations;
@@ -184,9 +185,9 @@ DELETE FROM teams;
 DELETE FROM users WHERE username != 'root';
 
 -- Extra users (password = same as root password; hash copied from root row).
-INSERT INTO users (id, username, password_hash, role) VALUES
-  ('user-alice-001', 'alice', '$ROOT_HASH_ESC', 'admin'),
-  ('user-bob-002',   'bob',   '$ROOT_HASH_ESC', 'user');
+INSERT INTO users (id, username, password_hash, role, email) VALUES
+  ('user-alice-001', 'alice', '$ROOT_HASH_ESC', 'admin', 'alice@example.com'),
+  ('user-bob-002',   'bob',   '$ROOT_HASH_ESC', 'user', 'bob@example.com');
 
 -- Plans. Phoenix points at the local mock Jira so Refresh works offline
 -- against jira_mock.json; Atlas is left unconfigured to exercise that path.
@@ -198,6 +199,11 @@ INSERT INTO team_admins (team_id, user_id) VALUES
   ('plan-phoenix-001', '$ROOT_ID'),
   ('plan-phoenix-001', 'user-alice-001'),
   ('plan-atlas-002',   '$ROOT_ID');
+
+-- Team Mates for Phoenix Team.
+INSERT INTO team_mates (id, team_id, user_id, name, email, jira_account_id, role) VALUES
+  ('mate-001', 'plan-phoenix-001', 'user-alice-001', 'Alice Cooper', 'alice@example.com', 'jira-alice-101', 'Tech Lead'),
+  ('mate-002', 'plan-phoenix-001', 'user-bob-002',   'Bob Marley',   'bob@example.com',   'jira-bob-102',   'Backend Engineer');
 
 -- Capacity plans.
 INSERT INTO capacity_plans (id, team_id, name, status, hours_per_sp, productive_hours, loading_factor, created_at, updated_at) VALUES
@@ -272,6 +278,7 @@ SELECT 'users='         || (SELECT COUNT(*) FROM users);
 SELECT 'teams='         || (SELECT COUNT(*) FROM teams);
 SELECT 'capacity_plans='|| (SELECT COUNT(*) FROM capacity_plans);
 SELECT 'team_members='  || (SELECT COUNT(*) FROM team_members);
+SELECT 'team_mates='    || (SELECT COUNT(*) FROM team_mates);
 SELECT 'sprints='       || (SELECT COUNT(*) FROM sprints);
 SELECT 'sprint_leaves=' || (SELECT COUNT(*) FROM sprint_leaves);
 SELECT 'jira_snapshots='|| (SELECT COUNT(*) FROM jira_snapshots);
