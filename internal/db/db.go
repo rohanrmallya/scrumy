@@ -278,6 +278,69 @@ func (db *DB) Migrate() error {
 		}
 	}
 
+	// Migration 9: Create team_mates table
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS team_mates (
+			id              TEXT PRIMARY KEY,
+			team_id         TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+			user_id         TEXT REFERENCES users(id) ON DELETE SET NULL,
+			name            TEXT NOT NULL,
+			email           TEXT NOT NULL DEFAULT '',
+			jira_account_id TEXT NOT NULL DEFAULT '',
+			role            TEXT NOT NULL DEFAULT '',
+			avatar_url      TEXT NOT NULL DEFAULT '',
+			created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(team_id, name)
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("create team_mates table: %w", err)
+	}
+
+	for _, stmt := range []string{
+		"CREATE INDEX IF NOT EXISTS idx_team_mates_team_id ON team_mates(team_id)",
+		"CREATE INDEX IF NOT EXISTS idx_team_mates_user_id ON team_mates(user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_team_mates_email ON team_mates(email)",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("create team_mates index: %w", err)
+		}
+	}
+
+	// Migration 10: Add zero_log_members to jira_snapshot_refresh_logs if not exists
+	if !columnExists(db, "jira_snapshot_refresh_logs", "zero_log_members") {
+		log.Println("⚡ Migrating: adding zero_log_members to jira_snapshot_refresh_logs table")
+		_, err = db.Exec("ALTER TABLE jira_snapshot_refresh_logs ADD COLUMN zero_log_members TEXT NOT NULL DEFAULT '[]'")
+		if err != nil {
+			return fmt.Errorf("add zero_log_members column: %w", err)
+		}
+	}
+
+	// Migration 11: Add email and jira_account_id to users if not exists
+	if !columnExists(db, "users", "email") {
+		log.Println("⚡ Migrating: adding email to users table")
+		_, err = db.Exec("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''")
+		if err != nil {
+			return fmt.Errorf("add email column to users: %w", err)
+		}
+	}
+	if !columnExists(db, "users", "jira_account_id") {
+		log.Println("⚡ Migrating: adding jira_account_id to users table")
+		_, err = db.Exec("ALTER TABLE users ADD COLUMN jira_account_id TEXT NOT NULL DEFAULT ''")
+		if err != nil {
+			return fmt.Errorf("add jira_account_id column to users: %w", err)
+		}
+	}
+	for _, stmt := range []string{
+		"CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+		"CREATE INDEX IF NOT EXISTS idx_users_jira_account_id ON users(jira_account_id)",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("create users index: %w", err)
+		}
+	}
+
 	return nil
 }
 

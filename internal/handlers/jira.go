@@ -318,7 +318,7 @@ func (h *JiraHandler) fetchSnapshot(teamID, id string) (*models.JiraSnapshot, in
 		SELECT id, snapshot_id, prev_story_points, new_story_points,
 		       prev_hours_logged, new_hours_logged, prev_worklogs_count, new_worklogs_count,
 		       prev_issues_count, new_issues_count, refreshed_at,
-		       user_deltas, user_deltas_all
+		       user_deltas, user_deltas_all, COALESCE(zero_log_members, '[]')
 		FROM jira_snapshot_refresh_logs
 		WHERE snapshot_id = ?
 		ORDER BY refreshed_at DESC
@@ -332,11 +332,11 @@ func (h *JiraHandler) fetchSnapshot(teamID, id string) (*models.JiraSnapshot, in
 	for rows.Next() {
 		var hr models.JiraSnapshotRefresh
 		var refreshedAt string
-		var userDeltasStr, userDeltasAllStr string
+		var userDeltasStr, userDeltasAllStr, zeroLogMembersStr string
 		err := rows.Scan(&hr.ID, &hr.SnapshotID, &hr.PrevStoryPoints, &hr.NewStoryPoints,
 			&hr.PrevHoursLogged, &hr.NewHoursLogged, &hr.PrevWorklogsCount, &hr.NewWorklogsCount,
 			&hr.PrevIssuesCount, &hr.NewIssuesCount, &refreshedAt,
-			&userDeltasStr, &userDeltasAllStr)
+			&userDeltasStr, &userDeltasAllStr, &zeroLogMembersStr)
 		if err != nil {
 			return nil, 500, err
 		}
@@ -358,6 +358,12 @@ func (h *JiraHandler) fetchSnapshot(teamID, id string) (*models.JiraSnapshot, in
 		}
 		if hr.UserDeltasAll == nil {
 			hr.UserDeltasAll = []models.JiraUserRefreshDelta{}
+		}
+		if zeroLogMembersStr != "" {
+			_ = json.Unmarshal([]byte(zeroLogMembersStr), &hr.ZeroLogMembers)
+		}
+		if hr.ZeroLogMembers == nil {
+			hr.ZeroLogMembers = []models.JiraZeroLogMember{}
 		}
 		history = append(history, hr)
 	}
@@ -464,6 +470,88 @@ func (h *JiraHandler) executeSnapshotRefresh(teamID, id string) (*models.JiraSna
 		userDeltasAllJson = []byte("[]")
 	}
 
+	// Compute team mates who did not log work in this snapshot
+	activeLeaderboard := data.Leaderboard
+	if allWorklogs {
+		activeLeaderboard = data.LeaderboardAll
+	}
+
+	type loggedContributor struct {
+		accountID string
+		email     string
+		hours     float64
+	}
+	loggedByLowerName := make(map[string]loggedContributor)
+	loggedByAccountID := make(map[string]loggedContributor)
+	loggedByEmail := make(map[string]loggedContributor)
+
+	for _, entry := range activeLeaderboard {
+		c := loggedContributor{
+			accountID: strings.TrimSpace(entry.AuthorAccountID),
+			email:     strings.ToLower(strings.TrimSpace(entry.AuthorEmail)),
+			hours:     entry.HoursLogged,
+		}
+		if entry.AuthorName != "" {
+			loggedByLowerName[strings.ToLower(strings.TrimSpace(entry.AuthorName))] = c
+		}
+		if c.accountID != "" {
+			loggedByAccountID[c.accountID] = c
+		}
+		if c.email != "" {
+			loggedByEmail[c.email] = c
+		}
+	}
+
+	var zeroLogMembers []models.JiraZeroLogMember
+	mateRows, err := h.DB.Query("SELECT name, email, jira_account_id FROM team_mates WHERE team_id = ?", teamID)
+	if err == nil {
+		for mateRows.Next() {
+			var mName, mEmail, mJiraID string
+			if err := mateRows.Scan(&mName, &mEmail, &mJiraID); err == nil {
+				nameLower := strings.ToLower(strings.TrimSpace(mName))
+				emailLower := strings.ToLower(strings.TrimSpace(mEmail))
+				jiraID := strings.TrimSpace(mJiraID)
+
+				var matchedHours float64
+				var found bool
+
+				if emailLower != "" {
+					if c, ok := loggedByEmail[emailLower]; ok {
+						matchedHours = c.hours
+						found = true
+					}
+				}
+				if !found && jiraID != "" {
+					if c, ok := loggedByAccountID[jiraID]; ok {
+						matchedHours = c.hours
+						found = true
+					}
+				}
+				if !found {
+					if c, ok := loggedByLowerName[nameLower]; ok {
+						matchedHours = c.hours
+						found = true
+					}
+				}
+
+				if !found || matchedHours == 0 {
+					zeroLogMembers = append(zeroLogMembers, models.JiraZeroLogMember{
+						Name:          mName,
+						Email:         mEmail,
+						JiraAccountID: mJiraID,
+						TotalHours:    matchedHours,
+					})
+				}
+			}
+		}
+		mateRows.Close()
+	}
+
+	zeroLogMembersJson, err := json.Marshal(zeroLogMembers)
+	if err != nil {
+		zeroLogMembersJson = []byte("[]")
+	}
+
 	// Update snapshot and write history in a transaction
 	tx, err := h.DB.Begin()
 	if err != nil {
@@ -486,9 +574,9 @@ func (h *JiraHandler) executeSnapshotRefresh(teamID, id string) (*models.JiraSna
 			id, snapshot_id, prev_story_points, new_story_points,
 			prev_hours_logged, new_hours_logged, prev_worklogs_count, new_worklogs_count,
 			prev_issues_count, new_issues_count, refreshed_at,
-			user_deltas, user_deltas_all
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
-	`, refreshID, id, prevSP, newSP, prevHours, newHours, prevWorklogs, newWorklogs, prevIssues, newIssues, string(userDeltasJson), string(userDeltasAllJson))
+			user_deltas, user_deltas_all, zero_log_members
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
+	`, refreshID, id, prevSP, newSP, prevHours, newHours, prevWorklogs, newWorklogs, prevIssues, newIssues, string(userDeltasJson), string(userDeltasAllJson), string(zeroLogMembersJson))
 	if err != nil {
 		return nil, 500, err
 	}

@@ -75,6 +75,13 @@ func main() {
 		r.Post(prefix+"/{teamID}/admins", teamsH.AddAdmin)
 		r.Delete(prefix+"/{teamID}/admins", teamsH.RemoveAdmin)
 
+		// Team Mates
+		r.Get(prefix+"/{teamID}/mates", teamsH.ListMates)
+		r.Post(prefix+"/{teamID}/mates", teamsH.AddMate)
+		r.Post(prefix+"/{teamID}/mates/bulk", teamsH.BulkAddMates)
+		r.Put(prefix+"/{teamID}/mates/{mateID}", teamsH.UpdateMate)
+		r.Delete(prefix+"/{teamID}/mates/{mateID}", teamsH.DeleteMate)
+
 		// Jira Integration
 		r.Put(prefix+"/{teamID}/jira/settings", jiraH.UpdateSettings)
 		r.Post(prefix+"/{teamID}/jira/test-connection", jiraH.TestConnection)
@@ -131,6 +138,7 @@ func main() {
 		r.Post("/auth/register", authH.Register)
 		r.Post("/auth/logout", authH.Logout)
 		r.Get("/auth/me", authH.Me)
+		r.Put("/auth/profile", authH.UpdateProfile)
 		r.Post("/auth/change-password", authH.ChangePassword)
 
 		// Users (super admin only, except search)

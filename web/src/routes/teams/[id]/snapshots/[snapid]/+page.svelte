@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { api, type JiraSnapshot, type Team, type JiraUserRefreshDelta } from '$lib/api';
+  import { api, type JiraSnapshot, type Team, type TeamMate, type JiraUserRefreshDelta, type JiraLeaderboardEntry } from '$lib/api';
   import { user } from '$lib/auth';
 
   const teamID = $derived($page.params.id as string);
@@ -10,6 +10,7 @@
 
   let team = $state<Team | null>(null);
   let snapshot = $state<JiraSnapshot | null>(null);
+  let teamMates = $state<TeamMate[]>([]);
   let loading = $state(true);
   let error = $state('');
 
@@ -17,6 +18,11 @@
   let expandedDevelopers = $state<Record<string, boolean>>({});
   let refreshing = $state(false);
   let deleting = $state(false);
+
+  let addingMateName = $state<string | null>(null);
+  let bulkAddingAll = $state(false);
+  let mateActionNotice = $state('');
+  let mateActionError = $state('');
 
   let showAllWorklogs = $state(false);
   let expandedRefreshContributors = $state<Record<string, boolean>>({});
@@ -193,12 +199,14 @@
     loading = true;
     error = '';
     try {
-      const [p, s] = await Promise.all([
+      const [p, s, tm] = await Promise.all([
         api.teams.get(teamID),
-        api.jira.getSnapshot(teamID, snapshotID)
+        api.jira.getSnapshot(teamID, snapshotID),
+        api.teams.mates.list(teamID).catch(() => [])
       ]);
       team = p;
       snapshot = s;
+      teamMates = tm || [];
       if (s) {
         showAllWorklogs = s.all_worklogs;
         editSnapshotName = s.name;
@@ -488,6 +496,90 @@
     return map;
   });
 
+  function findTeamMate(entry: { author_name: string; author_email?: string; author_account_id?: string }) {
+    if (!teamMates.length) return null;
+    return teamMates.find(m => {
+      if (m.email && entry.author_email && m.email.toLowerCase().trim() === entry.author_email.toLowerCase().trim()) {
+        return true;
+      }
+      if (m.jira_account_id && entry.author_account_id && m.jira_account_id === entry.author_account_id) {
+        return true;
+      }
+      return m.name.toLowerCase().trim() === entry.author_name.toLowerCase().trim();
+    }) || null;
+  }
+
+  const unaddedLeaderboardContributors = $derived.by(() => {
+    const list = computedData?.leaderboard || [];
+    const unadded: JiraLeaderboardEntry[] = [];
+    const seen = new Set<string>();
+    for (const entry of list) {
+      if (!entry.author_name) continue;
+      const mate = findTeamMate(entry);
+      const key = (entry.author_email || entry.author_name).toLowerCase().trim();
+      if (!mate && !seen.has(key)) {
+        seen.add(key);
+        unadded.push(entry);
+      }
+    }
+    return unadded;
+  });
+
+  const zeroWorklogTeamMates = $derived.by(() => {
+    if (!teamMates.length) return [];
+    const lb = computedData?.leaderboard || [];
+    return teamMates.filter(mate => {
+      const entry = lb.find(e => {
+        if (mate.email && e.author_email && mate.email.toLowerCase().trim() === e.author_email.toLowerCase().trim()) return true;
+        if (mate.jira_account_id && e.author_account_id && mate.jira_account_id === e.author_account_id) return true;
+        return mate.name.toLowerCase().trim() === e.author_name.toLowerCase().trim();
+      });
+      return !entry || (entry.hours_logged === 0);
+    });
+  });
+
+  async function addContributorToTeam(entry: JiraLeaderboardEntry) {
+    addingMateName = entry.author_name;
+    mateActionNotice = '';
+    mateActionError = '';
+    try {
+      await api.teams.mates.add(teamID, {
+        name: entry.author_name,
+        email: entry.author_email || '',
+        jira_account_id: entry.author_account_id || ''
+      });
+      teamMates = await api.teams.mates.list(teamID);
+      mateActionNotice = `Added "${entry.author_name}" to team mates.`;
+      setTimeout(() => { if (mateActionNotice.includes(entry.author_name)) mateActionNotice = ''; }, 4000);
+    } catch (e: any) {
+      mateActionError = `Failed to add "${entry.author_name}": ${e.message}`;
+    } finally {
+      addingMateName = null;
+    }
+  }
+
+  async function addAllLeaderboardContributors() {
+    if (!unaddedLeaderboardContributors.length) return;
+    bulkAddingAll = true;
+    mateActionNotice = '';
+    mateActionError = '';
+    try {
+      const payload = unaddedLeaderboardContributors.map(e => ({
+        name: e.author_name,
+        email: e.author_email || '',
+        jira_account_id: e.author_account_id || ''
+      }));
+      const added = await api.teams.mates.bulkAdd(teamID, payload);
+      teamMates = await api.teams.mates.list(teamID);
+      mateActionNotice = `Successfully added ${added.length} contributor(s) to team mates.`;
+      setTimeout(() => { mateActionNotice = ''; }, 4000);
+    } catch (e: any) {
+      mateActionError = `Failed to add contributors: ${e.message}`;
+    } finally {
+      bulkAddingAll = false;
+    }
+  }
+
   function openRefreshBreakdown(logId?: string) {
     if (logId) {
       selectedRefreshLogId = logId;
@@ -640,9 +732,15 @@
       if (updated) {
         showAllWorklogs = updated.all_worklogs;
       }
+      teamMates = await api.teams.mates.list(teamID).catch(() => teamMates);
       leaderboardSearchQuery = '';
       expandedDevelopers = {};
-      alert('Snapshot refreshed successfully!');
+      const zeroCount = updated?.refresh_history?.[0]?.zero_log_members?.length || 0;
+      if (zeroCount > 0) {
+        alert(`Snapshot refreshed! ⚠️ Note: ${zeroCount} team member(s) have 0 logged hours.`);
+      } else {
+        alert('Snapshot refreshed successfully!');
+      }
     } catch (e: any) {
       alert(`Failed to refresh: ${e.message}`);
     } finally {
@@ -922,8 +1020,54 @@
     <!-- Tab Content -->
     <div style="display:flex; flex-direction:column; gap:24px;">
       {#if activeTab === 'overview'}
-<!-- Metrics Summary Cards -->
-      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
+        {#if mateActionNotice}
+          <div style="background:rgba(34, 197, 94, 0.1); border:1px solid rgba(34, 197, 94, 0.3); border-radius:8px; padding:10px 14px; font-size:12px; color:var(--c-success); display:flex; justify-content:space-between; align-items:center;">
+            <span>✓ {mateActionNotice}</span>
+            <button onclick={() => mateActionNotice = ''} style="background:none; border:none; color:inherit; cursor:pointer;">✕</button>
+          </div>
+        {/if}
+        {#if mateActionError}
+          <div style="background:rgba(239, 68, 68, 0.1); border:1px solid rgba(239, 68, 68, 0.3); border-radius:8px; padding:10px 14px; font-size:12px; color:var(--c-danger); display:flex; justify-content:space-between; align-items:center;">
+            <span>⚠️ {mateActionError}</span>
+            <button onclick={() => mateActionError = ''} style="background:none; border:none; color:inherit; cursor:pointer;">✕</button>
+          </div>
+        {/if}
+
+        {#if zeroWorklogTeamMates.length > 0}
+          <div style="background:rgba(239, 68, 68, 0.05); border:1px solid rgba(239, 68, 68, 0.25); border-radius:10px; padding:14px 18px; display:flex; align-items:flex-start; gap:14px; box-shadow:var(--shadow-sm);">
+            <span style="font-size:22px; line-height:1; margin-top:2px;">⚠️</span>
+            <div style="flex:1;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; flex-wrap:wrap; gap:8px;">
+                <span style="font-size:13px; font-weight:700; color:var(--c-danger);">
+                  {zeroWorklogTeamMates.length} {zeroWorklogTeamMates.length === 1 ? 'Team Mate has' : 'Team Mates have'} 0 hours logged in this snapshot
+                </span>
+                <span class="badge badge-danger" style="font-size:10px; font-weight:700; padding:2px 8px;">0.0 hrs Logged</span>
+              </div>
+              <p style="font-size:12px; color:var(--c-text-2); margin:0 0 10px 0; line-height:1.5;">
+                The following registered team mates have no work logged within this snapshot period:
+              </p>
+              <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                {#each zeroWorklogTeamMates as m}
+                  <span style="display:inline-flex; align-items:center; gap:6px; background:var(--c-surface); border:1px solid var(--c-border); border-radius:20px; padding:3px 10px; font-size:11px; font-weight:600; color:var(--c-text); box-shadow:var(--shadow-sm);">
+                    <span style="width:20px; height:20px; border-radius:50%; background:{avatarBg(m.name)[0]}; color:{avatarBg(m.name)[1]}; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:700;">
+                      {initials(m.name)}
+                    </span>
+                    <span>{m.name}</span>
+                    {#if m.username}
+                      <span style="color:var(--c-primary); font-size:10px; font-weight:500;">(@{m.username})</span>
+                    {/if}
+                    {#if m.role}
+                      <span class="badge" style="font-size:9px; padding:0 5px;">{m.role}</span>
+                    {/if}
+                  </span>
+                {/each}
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Metrics Summary Cards -->
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
         <div style="background:var(--c-surface); padding:20px; border-radius:10px; border:1px solid var(--c-border); box-shadow:var(--shadow-sm);">
           <p class="text-xs text-muted font-semibold" style="text-transform:uppercase; letter-spacing:0.05em; font-size:10px;">SP Burned</p>
           <p class="text-3xl font-bold" style="margin-top:6px; color:var(--c-success);">{snapshot.data.totals.total_story_points}</p>
@@ -1043,6 +1187,19 @@
                   <span>Done Tasks Only</span>
                 </label>
                 <span class="badge badge-primary">{filteredLeaderboard.length} Developers</span>
+                {#if team?.is_admin && unaddedLeaderboardContributors.length > 0}
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    onclick={addAllLeaderboardContributors}
+                    disabled={bulkAddingAll}
+                    style="font-size:11px; padding:3px 10px; display:inline-flex; align-items:center; gap:4px;"
+                    title="Add {unaddedLeaderboardContributors.length} non-teammate contributor(s) to Team Mates"
+                  >
+                    <span>+ Add All to Team</span>
+                    <span class="badge badge-primary" style="font-size:10px; padding:1px 5px;">{unaddedLeaderboardContributors.length}</span>
+                  </button>
+                {/if}
               </div>
             </div>
             
@@ -1076,6 +1233,7 @@
               {#each filteredLeaderboard as entry, idx}
                 {@const isExpanded = !!expandedDevelopers[entry.author_name]}
                 {@const uDelta = userDeltaMap[entry.author_name]}
+                {@const mate = findTeamMate(entry)}
                 <div 
                   style="background:var(--c-surface); border:1px solid var(--c-border); border-radius:8px; overflow:hidden; transition:all 150ms ease; box-shadow:var(--shadow-sm);"
                 >
@@ -1096,6 +1254,29 @@
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
                           <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                             <span class="font-bold text-sm" style="color:var(--c-text);">{entry.author_name}</span>
+                            {#if mate}
+                              <span
+                                class="badge badge-success"
+                                style="font-size:10px; padding:2px 7px; font-weight:600; display:inline-flex; align-items:center; gap:4px; border-radius:4px;"
+                                title="Team Mate{mate.username ? ` (@${mate.username})` : ''}{mate.role ? ` • ${mate.role}` : ''}"
+                              >
+                                <span>✓ Team Mate</span>
+                                {#if mate.username}
+                                  <span style="font-size:9px; opacity:0.85;">@{mate.username}</span>
+                                {/if}
+                              </span>
+                            {:else if team?.is_admin}
+                              <button
+                                type="button"
+                                class="btn btn-ghost btn-sm"
+                                style="font-size:10px; padding:2px 7px; height:auto; color:var(--c-primary); border:1px solid var(--c-primary); border-radius:4px; display:inline-flex; align-items:center; gap:3px;"
+                                onclick={(e) => { e.stopPropagation(); addContributorToTeam(entry); }}
+                                disabled={addingMateName === entry.author_name}
+                                title="Add {entry.author_name} to Team Mates"
+                              >
+                                {addingMateName === entry.author_name ? 'Adding…' : '+ Add to Team'}
+                              </button>
+                            {/if}
                             {#if entry.planned_hours !== undefined && entry.unplanned_hours !== undefined}
                               <span class="text-xs text-muted" style="font-size:11px;">
                                 (Planned: <strong>{entry.planned_hours}h ({entry.planned_pct ?? 0}%)</strong> • Unplanned: <strong style="color:{entry.unplanned_hours > 0 ? '#f59f00' : 'inherit'};">{entry.unplanned_hours}h ({entry.unplanned_pct ?? 0}%)</strong>)
@@ -1203,8 +1384,50 @@
           </div>
         </div>
 
-        
-      <!-- Info Insights card below or adjacent -->
+        {#if zeroWorklogTeamMates.length > 0}
+          <!-- Zero Worklog Team Mates Card -->
+          <div style="background:var(--c-surface); border:1px solid var(--c-border); border-radius:10px; padding:18px 20px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:16px;">⚠️</span>
+                <span class="font-bold text-sm" style="color:var(--c-danger);">Team Mates with No Logged Work</span>
+                <span class="badge badge-danger" style="font-size:10px; font-weight:700;">{zeroWorklogTeamMates.length} Members</span>
+              </div>
+              <span class="text-xs text-muted">0.0 hrs logged within snapshot window</span>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px;">
+              {#each zeroWorklogTeamMates as m}
+                <div style="background:var(--c-bg); border:1px solid var(--c-border); border-radius:8px; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                  <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+                    <span style="width:32px; height:32px; border-radius:50%; background:{avatarBg(m.name)[0]}; color:{avatarBg(m.name)[1]}; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0;">
+                      {initials(m.name)}
+                    </span>
+                    <div style="min-width:0;">
+                      <div style="font-size:12px; font-weight:700; color:var(--c-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                        {m.name}
+                      </div>
+                      <div style="font-size:10px; color:var(--c-text-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                        {#if m.username}
+                          <span style="color:var(--c-primary); font-weight:600;">@{m.username}</span>
+                        {:else if m.email}
+                          <span>{m.email}</span>
+                        {:else}
+                          <span>Team Mate</span>
+                        {/if}
+                        {#if m.role}
+                          <span> • {m.role}</span>
+                        {/if}
+                      </div>
+                    </div>
+                  </div>
+                  <span class="badge badge-danger" style="font-size:10px; font-weight:700; flex-shrink:0;">0.0 hrs</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        <!-- Info Insights card below or adjacent -->
           <div style="background:var(--c-surface); border-radius:10px; padding:20px; border:1px solid var(--c-border); box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:12px;">
             <h3 class="font-semibold text-sm" style="display:flex; align-items:center; gap:6px;">
               <span>ℹ️</span> Snapshot Insights
@@ -1621,6 +1844,33 @@
                     View detailed worklogs
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                   </button>
+
+                  {#if selectedHistory.zero_log_members && selectedHistory.zero_log_members.length > 0}
+                    <div style="margin-top:16px; background:rgba(239, 68, 68, 0.04); border:1px solid rgba(239, 68, 68, 0.2); border-radius:8px; padding:12px;">
+                      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span style="font-size:12px; font-weight:700; color:var(--c-danger); display:inline-flex; align-items:center; gap:6px;">
+                          <span>⚠️</span> Team Mates with 0 Hours Logged
+                        </span>
+                        <span class="badge badge-danger" style="font-size:10px; font-weight:700;">{selectedHistory.zero_log_members.length}</span>
+                      </div>
+                      <div style="display:flex; flex-direction:column; gap:6px;">
+                        {#each selectedHistory.zero_log_members as zm}
+                          <div style="display:flex; align-items:center; justify-content:space-between; font-size:11px; background:var(--c-surface); border:1px solid var(--c-border); border-radius:6px; padding:6px 10px;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                              <span style="width:20px; height:20px; border-radius:50%; background:{avatarBg(zm.name)[0]}; color:{avatarBg(zm.name)[1]}; font-size:9px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;">
+                                {initials(zm.name)}
+                              </span>
+                              <span style="font-weight:600; color:var(--c-text);">{zm.name}</span>
+                              {#if zm.role}
+                                <span class="badge" style="font-size:9px; padding:1px 5px;">{zm.role}</span>
+                              {/if}
+                            </div>
+                            <span style="color:var(--c-danger); font-weight:700;">0.0 hrs</span>
+                          </div>
+                        {/each}
+                      </div>
+                    </div>
+                  {/if}
                 </div>
 
                 <div style="border-top:1px solid var(--c-border); margin-top:16px; padding-top:14px;">
@@ -1952,6 +2202,28 @@
                 {/each}
               </tbody>
             </table>
+          {/if}
+
+          {#if selectedRefreshLog.zero_log_members && selectedRefreshLog.zero_log_members.length > 0}
+            <div style="margin-top:14px; background:rgba(239, 68, 68, 0.04); border:1px solid rgba(239, 68, 68, 0.2); border-radius:8px; padding:12px;">
+              <div style="font-size:12px; font-weight:700; color:var(--c-danger); margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+                <span>⚠️ Team Mates with 0 Hours Logged at this Refresh</span>
+                <span class="badge badge-danger" style="font-size:10px;">{selectedRefreshLog.zero_log_members.length}</span>
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:6px;">
+                {#each selectedRefreshLog.zero_log_members as zm}
+                  <div style="display:flex; align-items:center; justify-content:space-between; font-size:11px; background:var(--c-surface); border:1px solid var(--c-border); border-radius:6px; padding:6px 10px;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                      <span style="width:18px; height:18px; border-radius:50%; background:{avatarBg(zm.name)[0]}; color:{avatarBg(zm.name)[1]}; font-size:8px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;">
+                        {initials(zm.name)}
+                      </span>
+                      <span style="font-weight:600; color:var(--c-text);">{zm.name}</span>
+                    </div>
+                    <span style="color:var(--c-danger); font-weight:700;">0.0 hrs</span>
+                  </div>
+                {/each}
+              </div>
+            </div>
           {/if}
         </div>
 

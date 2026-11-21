@@ -215,6 +215,12 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string) (*mod
 	var issues []models.JiraIssue
 	totalStoryPoints := 0.0
 
+	type authorMeta struct {
+		accountID string
+		email     string
+	}
+	authorMetaMap := map[string]authorMeta{}
+
 	for _, issue := range allIssues {
 		var summary string
 		if raw, ok := issue.RawFields["summary"]; ok {
@@ -276,6 +282,20 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string) (*mod
 			if author == "" {
 				author = "Unknown"
 			}
+			accountID := wl.Author.AccountID
+			if accountID == "" {
+				accountID = wl.Author.Key
+				if accountID == "" {
+					accountID = wl.Author.Name
+				}
+			}
+			email := wl.Author.Email
+			if currentMeta, exists := authorMetaMap[author]; !exists || (currentMeta.email == "" && email != "") || (currentMeta.accountID == "" && accountID != "") {
+				authorMetaMap[author] = authorMeta{
+					accountID: accountID,
+					email:     email,
+				}
+			}
 
 			// 1. Accumulate for ALL worklogs
 			issueTimeSpentSecondsAll += wl.TimeSpentSeconds
@@ -336,11 +356,14 @@ func (c *Client) FetchRetroData(baseJQL, startStr, endStr, spField string) (*mod
 				return items[i].HoursLogged > items[j].HoursLogged
 			})
 
+			meta := authorMetaMap[author]
 			leaderboard = append(leaderboard, models.JiraLeaderboardEntry{
-				AuthorName:  author,
-				HoursLogged: round2(hours),
-				Percentage:  round2(pct),
-				Worklogs:    items,
+				AuthorName:      author,
+				AuthorAccountID: meta.accountID,
+				AuthorEmail:     meta.email,
+				HoursLogged:     round2(hours),
+				Percentage:      round2(pct),
+				Worklogs:        items,
 			})
 		}
 
@@ -400,8 +423,12 @@ type jiraStatusCategory struct {
 }
 
 type jiraUser struct {
-	DisplayName string `json:"displayName"`
-	Email       string `json:"emailAddress"`
+	AccountID   string            `json:"accountId"`
+	DisplayName string            `json:"displayName"`
+	Email       string            `json:"emailAddress"`
+	Key         string            `json:"key"`
+	Name        string            `json:"name"`
+	AvatarUrls  map[string]string `json:"avatarUrls"`
 }
 
 type jiraWorklogPage struct {

@@ -24,14 +24,15 @@ type UsersHandler struct {
 }
 
 type userResponse struct {
-	ID          string `json:"id"`
-	Username    string `json:"username"`
-	Role        string `json:"role"`
-	CreatedAt   string `json:"created_at"`
-	IsSuperAdmin bool  `json:"is_super_admin,omitempty"`
+	ID           string `json:"id"`
+	Username     string `json:"username"`
+	Email        string `json:"email"`
+	Role         string `json:"role"`
+	CreatedAt    string `json:"created_at"`
+	IsSuperAdmin bool   `json:"is_super_admin,omitempty"`
 }
 
-func scanUserRow(id, username, role, createdAt string) userResponse {
+func scanUserRow(id, username, role, email, createdAt string) userResponse {
 	// Normalize created_at to RFC3339 when possible; fall back to raw value.
 	formatted := createdAt
 	for _, layout := range []string{"2006-01-02T15:04:05Z", "2006-01-02 15:04:05", time.RFC3339} {
@@ -43,6 +44,7 @@ func scanUserRow(id, username, role, createdAt string) userResponse {
 	return userResponse{
 		ID:           id,
 		Username:     username,
+		Email:        email,
 		Role:         role,
 		CreatedAt:    formatted,
 		IsSuperAdmin: username == SuperAdminUsername(),
@@ -105,10 +107,11 @@ func (h *UsersHandler) Search(w http.ResponseWriter, r *http.Request) {
 }
 
 // List returns all users (super admin only).
-func (h *UsersHandler) List(w http.ResponseWriter, r *http.Request) {	if !h.requireSuperAdmin(w, r) {
+func (h *UsersHandler) List(w http.ResponseWriter, r *http.Request) {
+	if !h.requireSuperAdmin(w, r) {
 		return
 	}
-	rows, err := h.DB.Query("SELECT id, username, role, created_at FROM users ORDER BY username ASC")
+	rows, err := h.DB.Query("SELECT id, username, role, email, created_at FROM users ORDER BY username ASC")
 	if err != nil {
 		respondErr(w, http.StatusInternalServerError, "db error")
 		return
@@ -117,12 +120,12 @@ func (h *UsersHandler) List(w http.ResponseWriter, r *http.Request) {	if !h.requ
 
 	users := []userResponse{}
 	for rows.Next() {
-		var id, username, role, createdAt string
-		if err := rows.Scan(&id, &username, &role, &createdAt); err != nil {
+		var id, username, role, email, createdAt string
+		if err := rows.Scan(&id, &username, &role, &email, &createdAt); err != nil {
 			respondErr(w, http.StatusInternalServerError, "db error")
 			return
 		}
-		users = append(users, scanUserRow(id, username, role, createdAt))
+		users = append(users, scanUserRow(id, username, role, email, createdAt))
 	}
 	respond(w, http.StatusOK, users)
 }
@@ -135,6 +138,7 @@ func (h *UsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		Email    string `json:"email"`
 		Role     string `json:"role"`
 	}
 	if err := decode(r, &req); err != nil {
@@ -164,17 +168,22 @@ func (h *UsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	email := strings.TrimSpace(req.Email)
 	userID := uuid.New().String()
-	_, err = h.DB.Exec("INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
-		userID, req.Username, string(hash), role)
+	_, err = h.DB.Exec("INSERT INTO users (id, username, password_hash, role, email) VALUES (?, ?, ?, ?, ?)",
+		userID, req.Username, string(hash), role, email)
 	if err != nil {
 		respondErr(w, http.StatusConflict, "username already exists")
 		return
 	}
 
+	if email != "" {
+		_, _ = h.DB.Exec("UPDATE team_mates SET user_id = ? WHERE email = ? AND user_id IS NULL", userID, email)
+	}
+
 	var createdAt string
 	_ = h.DB.QueryRow("SELECT created_at FROM users WHERE id = ?", userID).Scan(&createdAt)
-	respond(w, http.StatusCreated, scanUserRow(userID, req.Username, role, createdAt))
+	respond(w, http.StatusCreated, scanUserRow(userID, req.Username, role, email, createdAt))
 }
 
 // UpdateRole changes a user's global role (super admin only).
@@ -217,9 +226,9 @@ func (h *UsersHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var createdAt string
-	_ = h.DB.QueryRow("SELECT created_at FROM users WHERE id = ?", targetID).Scan(&createdAt)
-	respond(w, http.StatusOK, scanUserRow(targetID, targetUsername, req.Role, createdAt))
+	var email, createdAt string
+	_ = h.DB.QueryRow("SELECT email, created_at FROM users WHERE id = ?", targetID).Scan(&email, &createdAt)
+	respond(w, http.StatusOK, scanUserRow(targetID, targetUsername, req.Role, email, createdAt))
 }
 
 // ResetPassword sets a new password for any user without knowing the old one (super admin only).
