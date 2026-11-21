@@ -99,8 +99,8 @@ CREATE TABLE IF NOT EXISTS users (
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_users_jira_account_id ON users(jira_account_id);
+-- NOTE: idx_users_email and idx_users_jira_account_id are created by Migration 11,
+-- not here, so opening a pre-existing database without those columns does not fail.
 
 CREATE TABLE IF NOT EXISTS team_admins (
     team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,

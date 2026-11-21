@@ -5,7 +5,7 @@ dev:
 	@echo "Starting Scrumy dev servers..."
 	@trap 'kill 0' SIGINT; \
 	  cd web && npm run dev & \
-	  sleep 1 && go run ./cmd/server/... & \
+	  sleep 1 && SCRUMY_SUPERADMIN=adminboss SCRUMY_SUPERADMIN_PASSWORD=secret123 go run ./cmd/server/... & \
 	  wait
 
 # Build frontend then compile Go binary
