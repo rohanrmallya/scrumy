@@ -32,6 +32,21 @@
   let showAddSprint = $state(false);
   let showAddMember = $state(false);
 
+  // Percentage display helper for loading factor (stored internally as decimal e.g. 0.75)
+  let loadingFactorPct = $derived(Math.round((cp.loading_factor || 0.75) * 100));
+
+  function updateLoadingFactorPct(val: number) {
+    if (isNaN(val) || val <= 0) val = 75;
+    if (val > 100) val = 100;
+    cp.loading_factor = val / 100.0;
+  }
+  // Edit sprint state
+  let editingSprintId = $state<string | null>(null);
+  let editSprintName = $state('');
+  let editSprintStart = $state('');
+  let editSprintEnd = $state('');
+  let savingSprint = $state(false);
+
   onMount(async () => {
     if (!isNew) {
       try {
@@ -89,8 +104,11 @@
   async function addMember() {
     console.log("Adding member: ", teamID, cp.id, newMemberName, newMemberRole, newMemberUtil);
     if (!newMemberName.trim() || !cp.id) return;
+    let util = Number(newMemberUtil);
+    if (isNaN(util) || util < 0) util = 0;
+    if (util > 100) util = 100;
     cp = await api.capacity.addMember(teamID, cp.id, {
-      name: newMemberName.trim(), role: newMemberRole.trim(), utilization_pct: newMemberUtil
+      name: newMemberName.trim(), role: newMemberRole.trim(), utilization_pct: util
     });
     newMemberName = ''; newMemberRole = ''; newMemberUtil = 100;
     showAddMember = false;
@@ -98,6 +116,8 @@
   }
 
   async function updateMemberUtil(m: TeamMember, val: number) {
+    if (isNaN(val) || val < 0) val = 0;
+    if (val > 100) val = 100;
     m.utilization_pct = val;
     await api.capacity.updateMember(teamID, cp.id, m.id, m);
     await refreshSummary();
@@ -111,15 +131,69 @@
   async function addSprint() {
     console.log("Adding sprint: ", teamID, cp.id, newSprintName, newSprintStart, newSprintEnd);
     if (!newSprintStart || !newSprintEnd || !cp.id) return;
+    if (newSprintEnd <= newSprintStart) {
+      error = 'Sprint end date must be after start date';
+      return;
+    }
+    error = '';
     cp = await api.capacity.addSprint(teamID, cp.id, {
       name: newSprintName || undefined,
       start_date: newSprintStart, end_date: newSprintEnd
     });
-    const newS = cp.sprints[cp.sprints.length - 1];
-    if (newS) expandedSprints = new Set([...expandedSprints, newS.id]);
+    // Ensure sorted in client as well
+    if (cp.sprints) {
+      cp.sprints.sort((a, b) => (a.start_date || '').localeCompare(b.start_date || ''));
+    }
+    const addedSprint = cp.sprints?.find(s => s.start_date === newSprintStart && (!newSprintName || s.name === newSprintName));
+    if (addedSprint) {
+      expandedSprints = new Set([...expandedSprints, addedSprint.id]);
+    }
     newSprintName = ''; newSprintStart = ''; newSprintEnd = '';
     showAddSprint = false;
     await refreshSummary();
+  }
+
+  function startEditSprint(sprint: Sprint, e?: Event) {
+    if (e) e.stopPropagation();
+    editingSprintId = sprint.id;
+    editSprintName = sprint.name;
+    editSprintStart = sprint.start_date;
+    editSprintEnd = sprint.end_date;
+  }
+
+  function cancelEditSprint(e?: Event) {
+    if (e) e.stopPropagation();
+    editingSprintId = null;
+    editSprintName = '';
+    editSprintStart = '';
+    editSprintEnd = '';
+  }
+
+  async function saveSprint(sID: string, e?: Event) {
+    if (e) e.stopPropagation();
+    if (!editSprintStart || !editSprintEnd || !cp.id) return;
+    if (editSprintEnd <= editSprintStart) {
+      error = 'Sprint end date must be after start date';
+      return;
+    }
+    error = '';
+    savingSprint = true;
+    try {
+      cp = await api.capacity.updateSprint(teamID, cp.id, sID, {
+        name: editSprintName.trim() || undefined,
+        start_date: editSprintStart,
+        end_date: editSprintEnd
+      });
+      if (cp.sprints) {
+        cp.sprints.sort((a, b) => (a.start_date || '').localeCompare(b.start_date || ''));
+      }
+      editingSprintId = null;
+      await refreshSummary();
+    } catch (err: any) {
+      error = err.message;
+    } finally {
+      savingSprint = false;
+    }
   }
 
   async function deleteSprint(sID: string) {
@@ -207,8 +281,17 @@
           </div>
           <div class="form-group">
             <label class="label" for="lf">Loading Factor (%)</label>
-            <input id="lf" type="number" class="input" bind:value={cp.loading_factor} min="0.1" max="1" step="0.05" />
-            <span class="text-xs text-muted">e.g. 0.75 = 75%</span>
+            <input
+              id="lf"
+              type="number"
+              class="input"
+              value={loadingFactorPct}
+              min="1"
+              max="100"
+              step="1"
+              oninput={e => updateLoadingFactorPct(Number((e.target as HTMLInputElement).value))}
+            />
+            <span class="text-xs text-muted">e.g. 75 = 75%</span>
           </div>
         </div>
       </div>
@@ -317,17 +400,55 @@
             {:else}
               {#each cp.sprints as sprint (sprint.id)}
                 <div style="border-bottom:1px solid var(--c-border);">
-                  <!-- Sprint header -->
-                  <button
-                    style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:none;border:none;font-family:inherit;cursor:pointer;text-align:left;"
-                    onclick={() => toggleSprint(sprint.id)}
-                  >
-                    <div class="flex items-center gap-3">
-                      <span style="font-size:13px;color:var(--c-text-3);transition:transform 200ms ease;transform:rotate({expandedSprints.has(sprint.id) ? '0' : '-90'}deg)">▾</span>
-                      <span class="font-semibold" style="font-size:16px;">{sprint.name}</span>
+                  {#if editingSprintId === sprint.id}
+                    <!-- Edit sprint inline form -->
+                    <div style="padding:14px 20px;background:var(--c-bg);display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+                      <div class="form-group" style="flex:1;min-width:140px;margin-bottom:0;">
+                        <label class="label" style="font-size:11px;margin-bottom:4px;">Sprint Name</label>
+                        <input class="input" bind:value={editSprintName} placeholder="e.g. Sprint 24" />
+                      </div>
+                      <div class="form-group" style="margin-bottom:0;">
+                        <label class="label" style="font-size:11px;margin-bottom:4px;">Start Date</label>
+                        <input type="date" class="input" bind:value={editSprintStart} />
+                      </div>
+                      <div class="form-group" style="margin-bottom:0;">
+                        <label class="label" style="font-size:11px;margin-bottom:4px;">End Date</label>
+                        <input type="date" class="input" bind:value={editSprintEnd} />
+                      </div>
+                      <div class="flex gap-2">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick={cancelEditSprint} disabled={savingSprint}>Cancel</button>
+                        <button type="button" class="btn btn-primary btn-sm" onclick={(e) => saveSprint(sprint.id, e)} disabled={savingSprint || !editSprintStart || !editSprintEnd}>
+                          {savingSprint ? 'Saving…' : 'Save'}
+                        </button>
+                      </div>
                     </div>
-                    <span class="text-sm text-muted">Start: {sprint.start_date} · End: {sprint.end_date}</span>
-                  </button>
+                  {:else}
+                    <!-- Sprint header -->
+                    <div
+                      role="button"
+                      tabindex="0"
+                      style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:14px 20px;cursor:pointer;user-select:none;"
+                      onclick={() => toggleSprint(sprint.id)}
+                      onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSprint(sprint.id); } }}
+                    >
+                      <div class="flex items-center gap-3">
+                        <span style="font-size:13px;color:var(--c-text-3);transition:transform 200ms ease;transform:rotate({expandedSprints.has(sprint.id) ? '0' : '-90'}deg)">▾</span>
+                        <span class="font-semibold" style="font-size:16px;">{sprint.name}</span>
+                      </div>
+                      <div class="flex items-center gap-3">
+                        <span class="text-sm text-muted">Start: {sprint.start_date} · End: {sprint.end_date}</span>
+                        <button
+                          type="button"
+                          class="btn btn-ghost btn-sm"
+                          style="font-size:12px;padding:2px 8px;"
+                          onclick={(e) => startEditSprint(sprint, e)}
+                          title="Edit Sprint"
+                        >
+                          ✎ Edit
+                        </button>
+                      </div>
+                    </div>
+                  {/if}
 
                   {#if expandedSprints.has(sprint.id)}
                     <div style="padding:0 20px 16px;">
@@ -360,8 +481,11 @@
                           {/if}
                         </tbody>
                       </table>
-                      <div class="flex justify-end" style="margin-top:8px;">
-                        <button class="btn btn-danger btn-sm" onclick={() => deleteSprint(sprint.id)}>Remove Sprint</button>
+                      <div class="flex justify-end gap-2" style="margin-top:8px;">
+                        {#if editingSprintId !== sprint.id}
+                          <button type="button" class="btn btn-secondary btn-sm" onclick={(e) => startEditSprint(sprint, e)}>Edit Sprint</button>
+                        {/if}
+                        <button type="button" class="btn btn-danger btn-sm" onclick={() => deleteSprint(sprint.id)}>Remove Sprint</button>
                       </div>
                     </div>
                   {/if}
@@ -439,8 +563,18 @@
           </div>
           <div class="form-group">
             <label class="label" for="lf2">Loading Factor (%)</label>
-            <input id="lf2" type="number" class="input" bind:value={cp.loading_factor} min="0.1" max="1" step="0.05" onchange={saveVelocity} />
-            <span class="text-xs text-muted">Accounts for meetings, ceremonies, and standard overhead.</span>
+            <input
+              id="lf2"
+              type="number"
+              class="input"
+              value={loadingFactorPct}
+              min="1"
+              max="100"
+              step="1"
+              oninput={e => updateLoadingFactorPct(Number((e.target as HTMLInputElement).value))}
+              onchange={saveVelocity}
+            />
+            <span class="text-xs text-muted">Accounts for meetings, ceremonies, and standard overhead (e.g. 75 = 75%).</span>
           </div>
         </div>
       </div>

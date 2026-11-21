@@ -87,8 +87,11 @@ func (h *CapacityHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if body.ProductiveHours == 0 {
 		body.ProductiveHours = 6
 	}
-	if body.LoadingFactor == 0 {
+	if body.LoadingFactor <= 0 {
 		body.LoadingFactor = 0.75
+	} else if body.LoadingFactor > 1.0 {
+		// If sent as a percentage (e.g. 75 or 75%), convert to decimal
+		body.LoadingFactor = body.LoadingFactor / 100.0
 	}
 	id := uuid.NewString()
 	_, err := h.DB.Exec(`
@@ -139,6 +142,12 @@ func (h *CapacityHandler) Update(w http.ResponseWriter, r *http.Request) {
 		respondErr(w, 400, "invalid body")
 		return
 	}
+	if body.LoadingFactor > 1.0 {
+		body.LoadingFactor = body.LoadingFactor / 100.0
+	} else if body.LoadingFactor <= 0 {
+		body.LoadingFactor = 0.75
+	}
+
 	_, err := h.DB.Exec(`
 		UPDATE capacity_plans SET name=?, status=?, hours_per_sp=?, productive_hours=?, loading_factor=?, updated_at=CURRENT_TIMESTAMP
 		WHERE id=?
@@ -207,6 +216,10 @@ func (h *CapacityHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.UtilizationPct == 0 {
 		body.UtilizationPct = 100
+	} else if body.UtilizationPct > 100 {
+		body.UtilizationPct = 100
+	} else if body.UtilizationPct < 0 {
+		body.UtilizationPct = 0
 	}
 	id := uuid.NewString()
 	_, err := h.DB.Exec(`
@@ -237,6 +250,11 @@ func (h *CapacityHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 	if err := decode(r, &body); err != nil {
 		respondErr(w, 400, "invalid body")
 		return
+	}
+	if body.UtilizationPct > 100 {
+		body.UtilizationPct = 100
+	} else if body.UtilizationPct < 0 {
+		body.UtilizationPct = 0
 	}
 	_, err := h.DB.Exec(`UPDATE team_members SET name=?, role=?, utilization_pct=? WHERE id=? AND capacity_plan_id=?`,
 		body.Name, body.Role, body.UtilizationPct, mID, cpID)
@@ -279,6 +297,10 @@ func (h *CapacityHandler) AddSprint(w http.ResponseWriter, r *http.Request) {
 		respondErr(w, 400, "start_date and end_date required")
 		return
 	}
+	if body.EndDate <= body.StartDate {
+		respondErr(w, 400, "end_date must be after start_date")
+		return
+	}
 	if body.Name == "" {
 		// auto-name
 		var count int
@@ -313,6 +335,14 @@ func (h *CapacityHandler) UpdateSprint(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decode(r, &body); err != nil {
 		respondErr(w, 400, "invalid body")
+		return
+	}
+	if body.StartDate == "" || body.EndDate == "" {
+		respondErr(w, 400, "start_date and end_date required")
+		return
+	}
+	if body.EndDate <= body.StartDate {
+		respondErr(w, 400, "end_date must be after start_date")
 		return
 	}
 	h.DB.Exec(`UPDATE sprints SET name=?, start_date=?, end_date=? WHERE id=? AND capacity_plan_id=?`,
@@ -383,7 +413,8 @@ func (h *CapacityHandler) loadFull(id string) (models.CapacityPlan, error) {
 	mRows.Close()
 
 	// sprints
-	sRows, err := h.DB.Query(`SELECT id, capacity_plan_id, name, start_date, end_date, sort_order FROM sprints WHERE capacity_plan_id=? ORDER BY sort_order`, id)
+	var sRows *sql.Rows
+	sRows, err = h.DB.Query(`SELECT id, capacity_plan_id, name, start_date, end_date, sort_order FROM sprints WHERE capacity_plan_id=? ORDER BY start_date ASC, sort_order ASC, name ASC`, id)
 	if err != nil {
 		return cp, err
 	}
